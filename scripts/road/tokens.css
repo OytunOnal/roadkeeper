@@ -1,0 +1,77 @@
+/* Roadkeeper — The Road's design tokens: every colour, the three font stacks and the scroll shadow, light and dark, one set
+   of names by role for the page and its Architecture drawing. The Road inlines this file before its own style at every
+   draw; its style names only these names.
+   The palette is the drawing's beige and gold, the one it was designed in, so the page and its drawing read as one
+   product. The dark ground keeps the paper's green hue; warn is a burnt orange, apart from the accent and the red; the
+   band steps 1.2:1 from the ground, enough to tell the levels apart.
+   Each text token names the grounds it is read on (4.5:1 or more); each state token names the grounds it is drawn on
+   (3:1 or more). The annotations sit on the light block and bind both modes; tests/road/tokens-contrast-test.py checks
+   them. Lines, card edges and the band are decorative and carry none. */
+:root {
+    --ground: #F2F0E8; /* the page's and the drawing's ground; text on ink (tooltip, pressed button); read on: ink */
+    --paper: #FFFFFF; /* raised surfaces: counters, cards, code, the drawing's bar, panel and boxes; the diagrams' edge labels */
+    --ink: #1F2622; /* body text; read on: ground, paper, band, chip, package, accent-soft, warn-soft */
+    --muted: #4E6658; /* secondary text; the drawing's arrows; read on: ground, paper, band, chip, package, warn-soft */
+    --line: #D8D4C6; /* rules, borders, the drawing's frame */
+    --accent: #816400; /* links, the rail, closed milestones, released or not; the drawing's selection, package titles, a module's strips, solid and dashed; read on: ground, paper, package, warn-soft; drawn on: ground, band, paper, package */
+    --accent-soft: #F2E9C9; /* the accent's fill; the diagrams' nodes */
+    --done: #2D764A; /* real-green, mock-green, closed; the current milestone's bar, filled on done-soft; read on: ground, paper, done-soft; drawn on: ground, done-soft */
+    --done-soft: #E3EEDF; /* done's fill; the bar's empty part */
+    --warn: #A24E11; /* active, flags, the unread line, the tabs' badge; the drawing's excepted edges; read on: ground, paper, chip, warn-soft; drawn on: ground, band, paper, chip, warn-soft */
+    --warn-soft: #FAE4D4; /* warn's fill; a late card; the tabs' badge */
+    --bad: #C2332B; /* the drawing's outward edges and counts; read on: ground, paper, chip; drawn on: ground, band, paper, chip */
+    --bad-hot: #E0261A; /* an outward edge under the pointer; drawn on: ground, band */
+    --planned: #7C8A83; /* planned and candidate markers, dashed; drawn on: ground */
+    --band: #E0DCD1; /* the drawing's alternate level band, decorative (the labels carry the level); the diagrams' clusters */
+    --chip: #EEF1EC; /* the drawing's chips */
+    --package: #EEF2EE; /* the drawing's package box */
+    --card-edge: #9AA89F; /* the drawing's box and chip borders */
+    --shadow: rgba(0,0,0,.14); /* the scroll shadow */
+    --display: "IBM Plex Sans Condensed", "Arial Narrow", "Helvetica Neue", Arial, sans-serif;
+    --body: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+    --mono: "IBM Plex Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+      --ground: #141C19;
+      --paper: #24342F;
+      --ink: #ECECE4;
+      --muted: #9DB8A8;
+      --line: #2A3D36;
+      --accent: #E8C448;
+      --accent-soft: #3A3216;
+      --done: #78C493;
+      --done-soft: #1D3329;
+      --warn: #F38C48;
+      --warn-soft: #3F2717;
+      --bad: #DF857D;
+      --bad-hot: #FF5A4A;
+      --planned: #7F948A;
+      --band: #212C28;
+      --chip: #2A3833;
+      --package: #1F2D29;
+      --card-edge: #5A6E64;
+      --shadow: rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"] {
+    --ground: #141C19;
+    --paper: #24342F;
+    --ink: #ECECE4;
+    --muted: #9DB8A8;
+    --line: #2A3D36;
+    --accent: #E8C448;
+    --accent-soft: #3A3216;
+    --done: #78C493;
+    --done-soft: #1D3329;
+    --warn: #F38C48;
+    --warn-soft: #3F2717;
+    --bad: #DF857D;
+    --bad-hot: #FF5A4A;
+    --planned: #7F948A;
+    --band: #212C28;
+    --chip: #2A3833;
+    --package: #1F2D29;
+    --card-edge: #5A6E64;
+    --shadow: rgba(0,0,0,.5);
+}

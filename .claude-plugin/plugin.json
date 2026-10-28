@@ -1,0 +1,24 @@
+{
+  "name": "roadkeeper",
+  "version": "3.0.0",
+  "description": "Runs a project from an idea to a maintained product on top of Matt Pocock's skills: each slice specced, built test-first and reviewed in a pull request, the work kept on the issue tracker and drawn as one page, The Road.",
+  "author": {
+    "name": "Oytun Önal"
+  },
+  "skills": [
+    "./skills/genesis",
+    "./skills/steward",
+    "./skills/market-research",
+    "./skills/devils-advocate",
+    "./skills/design-critique",
+    "./skills/product-critique",
+    "./skills/road",
+    "./skills/idea",
+    "./skills/adopt",
+    "./skills/retro-spec",
+    "./skills/brainstorm",
+    "./skills/launch",
+    "./skills/slice"
+  ],
+  "hooks": "./scripts/hooks.json"
+}

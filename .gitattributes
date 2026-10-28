@@ -1,0 +1,6 @@
+# every text file checks out with LF: bash reads a CR as part of the command, and Claude Code's YAML frontmatter
+# parser fails on CRLF, dropping an agent's model, tools and description
+* text=auto eol=lf
+# generated from the code: a merge keeps one side, never a conflict, and the hooks restamp it from the merged code; the
+# driver is the clone's `git config merge.keep-ours.driver true`, which the green wires
+docs/roadkeeper/structure.json merge=keep-ours

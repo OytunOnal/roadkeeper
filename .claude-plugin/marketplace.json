@@ -1,0 +1,13 @@
+{
+  "name": "roadkeeper",
+  "description": "Roadkeeper's marketplace: the one plugin, roadkeeper.",
+  "owner": {
+    "name": "Oytun Önal"
+  },
+  "plugins": [
+    {
+      "name": "roadkeeper",
+      "source": "./"
+    }
+  ]
+}
