@@ -19,13 +19,13 @@ Done when the default branch's page is drawn from the current tracker and files.
 How every issue reads where The Road shows it, for someone who does not read code:
 
 - **Title:** what becomes possible, in words that reader follows. A real-use issue's: `Real use of #N: <the plain gain>`.
-- **Summary**, the first paragraph under the title: why it matters and to whom, never the title again. A bug's says what goes wrong for the person using it; a waiting-on-you issue's, what the owner is asked and why.
+- **Summary**, the first paragraph under the title (a spec's: the first paragraph under its Problem Statement): why it matters and to whom, never the title again. A bug's says what goes wrong for the person using it; a waiting-on-you issue's, what you are asked and why.
 - **`Bet:` line:** plain too.
 - **Below the Summary:** history, paths, case ids, tool and flag names, commits and PR numbers.
 
 ## Waiting on you
 
-Anything the human owes outside this conversation is an issue labelled `waiting-on-you` (An issue's title, Summary and bet). An issue in flight wears it beside its board label, and its `**Waits on:**` line, when the session has one, says what it waits on first. Before opening one:
+Anything the human owes outside this conversation is an issue labelled `waiting-on-you` (An issue's title, Summary and bet). An issue in flight wears it beside its board label. One that waits on something else first ends on a paragraph of its own, `**Waits on:** …`; The Road sets it apart until the line goes, which Claude removes when that comes. Before opening one:
 
 1. **Hand over only what only the human can supply:** their judgment, a credential, a device, a region, their eyes, a decision with consequences. Name it in one sentence. If the honest answer is "nothing, I just had not done it", do it instead.
 2. **A stranger could act on it alone**, with the product, a browser and the issue, and nothing else. The issue says:
@@ -33,5 +33,6 @@ Anything the human owes outside this conversation is an issue labelled `waiting-
    - the exact thing to look for: the value, string or behaviour, quoted;
    - what a pass looks like, and what to do if it fails;
    - why it is theirs: the sentence from rule 1.
+3. **It speaks to the human as "you"**, in the language the project's tracker is written in; the human's own words are quoted translated into it. The agent is "Claude"; a Roadkeeper step (a session, a critique, a grill, a retro) is said as what happened, not by its name; another project is named with what it is to the human the first time it appears.
 
 When the human answers, write the answer as a comment, remove the label, and close the issue.

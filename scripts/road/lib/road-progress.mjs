@@ -1,9 +1,9 @@
 // @level presentation
 // Roadkeeper — The Road's progress groups: Done, Now, Next and Ahead along the rail, drawn from the road model
-// (road-model.mjs), with no decisions of its own; and the seven helpers the page shares with them, the page's one date
+// (road-model.mjs), with no decisions of its own; and the eight helpers the page shares with them, the page's one date
 // format, a closed version's state, an issue's number linked, an issue's "#N title" linked, "ready to close" linked to
-// its line, an issue's Summary as the road shows it, which the page's lead takes from the
-// one-pager too, and the project's name as the one-pager says it.
+// its line, an issue's Summary as the road shows it, the page's lead, made from the one-pager as a Summary is, and the
+// project's name as the one-pager says it.
 //
 // renderGroups(road, sizeStep) draws the four groups: Done, a group per closed milestone and then the issues closed
 // with no milestone; Now, the work in flight; Next, the rest of the current milestone; Ahead, a group per later
@@ -12,7 +12,7 @@
 // Tracker text is a stranger's: every title and body is escaped.
 
 import { countInWords, cutAt, dateParts, esc, isCalendarDate, plural } from "../../_text.mjs";
-import { cutInline, inline, listItems, markdownSubset, withLfEndings } from "./markdown-subset.mjs";
+import { HEADING_LINE, cutInline, inline, listItems, markdownSubset, withLfEndings } from "./markdown-subset.mjs";
 import { closedLookOf, lookOf, lookWords, marker } from "./road-key.mjs";
 import { WAITS_ON, dayOf } from "./road-model.mjs";
 
@@ -50,31 +50,63 @@ const SUMMARY_AT = 600;
 // The lead of an idea's first item, which the idea's title says (skills/idea/SKILL.md, Refine it).
 const IDEA_LEAD = /^\**What becomes possible\**:/;
 
-// The lines of the first paragraph of a body that is not a heading's, nor the line naming what it waits on, which its
+// The text a Summary is read from: a spec's, what follows its `## Problem Statement` heading, which /to-spec writes;
+// any other body whole.
+function readSummarySource(body) {
+  const lines = withLfEndings(body).split("\n");
+  const at = lines.findIndex((l) => {
+    const h = HEADING_LINE.exec(l);
+    return h && h[1] === "##" && h[2].trim() === "Problem Statement";
+  });
+  if (at < 0) return lines.join("\n");
+  return lines.slice(at + 1).join("\n");
+}
+
+// The lines of the first paragraph of a text that is not a heading's, nor the line naming what it waits on, which its
 // waiting chip says; none when there is none.
-function firstParagraph(body) {
-  for (const p of withLfEndings(body).split(/\n\s*\n/)) {
-    const lines = p.split("\n").filter((l) => !/^\s*#/.test(l));
+function firstParagraph(text) {
+  for (const p of withLfEndings(text).split(/\n\s*\n/)) {
+    const lines = p.split("\n").filter((l) => !HEADING_LINE.test(l));
     if (lines.join("").trim() && !WAITS_ON.test(lines.join("\n"))) return lines;
   }
   return [];
 }
 
+// The lines a Summary is made from: a body's first paragraph, a spec's under its Problem Statement.
+const readSummaryParagraph = (body) => firstParagraph(readSummarySource(body));
+
 const oneLine = (parts) => parts.join(" ").replace(/\s+/g, " ").trim();
 
-// An issue's summary, what "more" is weighed against: its first paragraph on one line.
-const summaryOf = (body) => cutAt(oneLine(firstParagraph(body)), SUMMARY_AT);
-
-// An issue's Summary as the road shows it: its first paragraph on one line; a list's items as prose, one after
-// another, the item led by "What becomes possible:" left out unless no other is left, then the lines past the list.
-// Its cut splits no markup.
-export function shownSummaryOf(body) {
-  const lines = firstParagraph(body);
-  const list = listItems(lines);
-  if (!list) return cutInline(oneLine(lines), SUMMARY_AT);
-  const kept = list.items.filter((t) => !IDEA_LEAD.test(t.trim()));
-  return cutInline(oneLine([...(kept.length ? kept : list.items), ...lines.slice(list.next)]), SUMMARY_AT);
+// A line ending on a colon, announcing what it does not show: its last sentence dropped while one comes before it,
+// else the colon made a full stop. A sentence ends at `.`, `!` or `?` and a space, so "v2.6.0" ends none.
+function dropClosingColon(line) {
+  if (!line.endsWith(":")) return line;
+  const ends = [...line.matchAll(/[.!?](?= )/g)];
+  return ends.length ? line.slice(0, ends[ends.length - 1].index + 1) : `${line.slice(0, -1)}.`;
 }
+
+// An issue's summary, what "more" is weighed against: its first paragraph on one line.
+const summaryOf = (body) => cutAt(oneLine(readSummaryParagraph(body)), SUMMARY_AT);
+
+// A paragraph's lines with a list opening them read as prose: its items one after another, the item led by "What
+// becomes possible:" left out unless no other is left, then the lines past the list; lines with no list as they are.
+function turnListToProse(lines) {
+  const list = listItems(lines);
+  if (!list) return lines;
+  const kept = list.items.filter((t) => !IDEA_LEAD.test(t.trim()));
+  return [...(kept.length ? kept : list.items), ...lines.slice(list.next)];
+}
+
+// A paragraph's lines as the road shows them: on one line, a list's items as prose; a line ending on a colon ends on a
+// sentence. Its cut splits no markup.
+const makeShownLine = (lines) => cutInline(dropClosingColon(oneLine(turnListToProse(lines))), SUMMARY_AT);
+
+// An issue's Summary as the road shows it: its first paragraph, a spec's under its Problem Statement, made a shown line.
+const shownSummaryOf =(body) => makeShownLine(readSummaryParagraph(body));
+
+// The page's lead as the road shows it: the one-pager's first paragraph, a Problem Statement heading read as any
+// heading, made a shown line as a Summary is.
+export const shownLeadOf = (onePager) => makeShownLine(firstParagraph(onePager));
 
 // The project's name as its one-pager says it: the words of the heading the text opens on, cut as a Summary is; ""
 // with no text, or a text opening on anything but a heading.
@@ -117,36 +149,22 @@ const mergedOf = (i) => (i.ticketsClosed < i.tickets.length
 const refChips = (i) => [["specced from", i.from], ["real-use check", i.realUses]].filter(([, refs]) => refs.length)
   .map(([word, refs]) => `<span class="tag ref">${word} ${refs.map(issueRef).join(", ")}</span>`).join("");
 
-// Characters a waiting chip's words keep before their cut: at 1440 px the heading column holds 87 of a chip's.
-const WAITS_CHIP_AT = 80;
-
-// Cut a string past n UTF-16 units at its last whole word before the nth, as cutAt cuts it, the punctuation and space
-// after that word dropped and "…" added, so the cut holds n units at most; a word longer than that is cut inside it.
-// The string itself when it fits.
-function cutAtWord(s, n) {
-  if (s.length <= n) return s;
-  const cut = cutAt(s, n - 1);
-  const end = /\s/.test(s.charAt(cut.length)) ? cut.length : cut.search(/\s\S*$/);
-  return `${(end > 0 ? cut.slice(0, end) : cut).replace(/[\s,;:]+$/, "")}…`;
-}
-
 // `text` escaped, each `#N` of `refs` (an issue's number and address) linked, any other `#N` left text.
 const withRefs = (text, refs) => text.split(/(#\d{1,9}\b)/).map((part, at) => {
   const ref = at % 2 ? refs.find((r) => `#${r.number}` === part) : null;
   return ref ? issueRef(ref) : esc(part);
 }).join("");
 
-// The chip saying what an issue in flight waits on, beside its board chip: "waits on your word" in the waiting colours
-// while it wears waiting-on-you; else "waits on" and its line, its issues linked, cut at a word past WAITS_CHIP_AT.
-// A cut chip shows its whole words on hover; a screen reader reads them whole, from hidden text, and not the cut. Its
-// links stay in the cut it shows, the one Tab reaches, so a keyboard's focus is seen; none when it waits on nothing named.
-function waitsChip(i) {
-  if (i.waitsOnYou) return `<span class="tag wait">waits on your word</span>`;
-  if (!i.waitsOn) return "";
-  const words = `waits on ${i.waitsOn.line}`, cut = cutAtWord(words, WAITS_CHIP_AT);
-  if (cut === words) return `<span class="tag">${withRefs(words, i.waitsOn.refs)}</span>`;
-  return `<span class="tag" title="${esc(words)}"><span aria-hidden="true">${withRefs(cut, i.waitsOn.refs)}</span><span class="unseen">${esc(words)}</span></span>`;
-}
+// The chip beside an issue's board chip while it wears waiting-on-you and names nothing else it waits on: "waits on
+// your word" in the waiting colours.
+const drawYourWordChip = (i) => (i.waitsOnYou ? `<span class="tag wait">waits on your word</span>` : "");
+
+// What an issue in flight waits on, named by its `**Waits on:**` line, waiting-on-you or not, on a line of its own
+// under its heading: a chip, "waits on" in its capitals and the line as written, whole, in a span of its own, its known
+// issues linked; it wraps inside its frame. None while it waits on nothing named.
+const drawWaitsOnLine = (i) => (i.waitsOn
+  ? `<div class="waits-on"><span class="tag">waits on<span class="as-written"> ${withRefs(i.waitsOn.line, i.waitsOn.refs)}</span></span></div>`
+  : "");
 
 // An issue's heading: its h3 names the issue alone, "#N title", one link; what sits beside it follows on its line, in a
 // sibling. The space between them, in its own span, is the line's one break there: a line too short moves the chips
@@ -158,16 +176,16 @@ function issueHeading(i, beside) {
 
 // One issue on the rail; `look` is its slice class, the look its marker is named by when not that class's
 // (`markerLook`), what its when column says as HTML (`whenHtml`), its state tag, and whether it tags its version
-// (`tagsVersion`). Its "more" names its issue to a screen reader, its visible word
-// first; it sits in the less bar at the card's foot, where an open card's "less" sticks.
+// (`tagsVersion`). What it waits on follows its heading, on a line of its own. Its "more" names its issue to a screen
+// reader, its visible word first; it sits in the less bar at the card's foot, where an open card's "less" sticks.
 function issueSlice(i, look, sizeStep) {
   const summary = shownSummaryOf(i.body);
   const detail = issueDetail(i, sizeStep);
   const text = (summary ? `<p class="sum${detail ? " clamp" : ""}">${inline(summary)}</p>` : "")
     + (detail ? `${detail}<div class="less-bar"><button type="button" class="more" aria-expanded="false" aria-label="more about #${i.number}">more</button></div>` : "");
   const version = look.tagsVersion && i.version ? tag("ver", i.version) : "";
-  const beside = `${refChips(i)}${look.tag}${waitsChip(i)}${version}${mergedOf(i)}`;
-  return `<li class="slice${look.cls ? " " + look.cls : ""}"><div class="when">${look.whenHtml}</div>${marker("dot", look.markerLook || look.cls, Boolean(i.version))}<div class="body">${issueHeading(i, beside)}${text}</div></li>`;
+  const beside = `${refChips(i)}${look.tag}${drawYourWordChip(i)}${version}${mergedOf(i)}`;
+  return `<li class="slice${look.cls ? " " + look.cls : ""}"><div class="when">${look.whenHtml}</div>${marker("dot", look.markerLook || look.cls, Boolean(i.version))}<div class="body">${issueHeading(i, beside)}${drawWaitsOnLine(i)}${text}</div></li>`;
 }
 
 // One issue on the rail, drawn by its board label, its state's word a tag; `tagsVersion` true where milestones mix, as

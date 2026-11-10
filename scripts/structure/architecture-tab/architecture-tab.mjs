@@ -12,6 +12,7 @@
 
 import { functionSources } from "../../_function-sources.mjs";
 import { countInWords, esc, plural } from "../../_text.mjs";
+import { moduleCountWords } from "../lib/module-records.mjs";
 import { reviewPointKind, reviewPointOrder } from "../lib/structure-model.mjs";
 import * as tabCountsPart from "./lib/tab-counts.mjs";
 import { drawsRed, MARK, outwardFirst, SIZE_STEPS, tabData } from "./lib/tab-data.mjs";
@@ -24,17 +25,40 @@ import * as tabWordsPart from "./lib/tab-words.mjs";
 
 // JSON inside a script element: `<` never closes it, and the two line separators never end a JS line
 const jsonInScript = (v) => JSON.stringify(v).replace(/</g, "\\u003c").replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
-// the table's Entry cell: a module's entry, or each of its several root files in red, the ones over the page cap counted
-const entryCell = (m) => (m.rootFiles.length > 1
-  ? [...m.rootFiles.map((f) => `<span class="bad">${esc(f)}</span>`), ...(m.rootFilesCut ? [`${m.rootFilesCut} more over the page cap`] : [])].join("<br>")
-  : esc(m.entry || ""));
+// the table's Entry cell: a module's entry, or each of its several root files in its mark's colour, the ones over the
+// page cap counted, then the exception covering them
+function entryCell(m) {
+  if (!tabCountsPart.severalRootFiles(m)) return esc(m.entry || "");
+  const mark = tabCountsPart.markRootFiles(m), exceptionWords = tabPanelPart.exceptionNote(mark, m.rootFilesUntil).trim();
+  return [...m.rootFiles.map((f) => `<span class="${tabWordsPart.markClass(mark).trim()}">${esc(f)}</span>`),
+    ...(m.rootFilesCut ? [`${m.rootFilesCut} more over the page cap`] : []), ...(exceptionWords ? [esc(exceptionWords)] : [])].join("<br>");
+}
+// the table's count cell: a module's files and the way in, the first of its notes (listModuleNotes), red past the
+// interface
+function drawCountCell(m) {
+  const words = esc(tabWordsPart.listModuleNotes(m)[0]);
+  return m.pastInterface ? `<span class="sv-past">${words}</span>` : words;
+}
+// the lede's lines on the modules with several root files: the ones drawn red, uncovered or due, and the ones an
+// exception covers, drawn orange, with their first review point; each only when its count is not zero
+function writeRootFilesLede(view) {
+  const several = view.modules.filter((m) => tabCountsPart.severalRootFiles(m));
+  const red = several.filter((m) => drawsRed(tabCountsPart.markRootFiles(m))).length;
+  const exceptedModules = several.filter((m) => tabCountsPart.markRootFiles(m) === MARK.excepted);
+  const earliestPoint = exceptedModules.reduce((h, m) => (m.rootFilesUntil ? tabCountsPart.earliestReviewPoints(h, m.rootFilesUntil) : h), null);
+  const point = tabWordsPart.reviewPointWords(earliestPoint);
+  return [
+    red ? `${plural(red, "module")} with several root files, drawn red` : "",
+    exceptedModules.length ? `${plural(exceptedModules.length, "module")} with several root files, covered by an exception, drawn orange${point ? `; the first review point is ${point}` : ""}` : "",
+  ];
+}
 
 // The lede: what the drawing holds, one fact a line. The modules and the red line always show, in words at zero; every
 // other line only when its count is not zero.
 function ledeHtml(view) {
   // every dependency is between the top view's boxes or inside one
   const t = tabCountsPart.drawingTotals(view), out = t.out + t.insideOut, exc = t.exc + t.insideExc, dependencyWords = tabWordsPart.dependencyWords;
-  const roots = view.modules.filter((m) => m.rootFiles.length > 1).length, point = tabWordsPart.reviewPointWords(t.earliest), mixed = (view.mixed || []).length;
+  const point = tabWordsPart.reviewPointWords(t.earliest), mixed = (view.mixed || []).length;
   const cuts = [
     view.outside ? `${dependencyWords(view.outside)} leaving the code read` : "",
     view.notDrawn ? `${dependencyWords(view.notDrawn)} to modules over the page's cap` : "",
@@ -51,7 +75,7 @@ function ledeHtml(view) {
     out ? `${plural(out, "dependency on an outer level", "dependencies on an outer level")}, drawn red` : "No dependencies on an outer level",
     exc ? `${dependencyWords(exc)} covered by an exception, drawn orange${point ? `; the first review point is ${point}` : ""}` : "",
     mixed ? `${plural(mixed, "file")} on several levels (drawn red, or orange when an exception covers them)` : "",
-    roots ? `${plural(roots, "module")} with several root files, drawn red` : "",
+    ...writeRootFilesLede(view),
     view.cycles.length ? `${plural(view.cycles.length, "cycle")} among modules, marked on their boxes` : "",
     cuts.length ? `Not drawn: ${cuts.join("; ")}` : "",
   ].filter(Boolean);
@@ -65,10 +89,12 @@ const KEY = [
   [["A module", " spans the bands its files and nested modules are in. The line down a module's left edge is solid beside each level the module has files on, and dashed beside a level it only passes through, with no files there."]],
   [["A file outside any module", " is a box of its own in its level's band."]],
   [["+ \u2212 «type»", ": an exported name, a private one, a type: UML's marks."]],
-  [["1 of 12 reached", ": the files code outside the module uses; a deep module's is 1, its entry. The bar under it shows the share."]],
-  [["past the interface", ": files code outside reaches around the entry, red on the bar."]],
-  [["shallow?", ": a module whose only file is its entry."]],
-  [["Several root files", ": a module with more than one root file has no entry; the check reports them, and the module is drawn red."]],
+  [["13 files · through its entry", ": code outside the module uses only its entry file, as a deep module's should; "], ["not used from outside", " when nothing outside uses it."]],
+  [["2 past the interface", ": code outside uses 2 of its files directly, around its entry; the box is red."]],
+  [["no entry", ": a module with several root files, so no one file is its way in; "], ["excepted", ": an exception covers those reaches, until its review point; "],
+    ["counted at src/jobs", ": the reach also goes around an outer module's entry, so it's counted, and drawn red, there."]],
+  [["shallow?", ": a module whose only code file is its entry."]],
+  [["Several root files", ": a module with more than one root file has no entry; the check reports them, and the module is drawn red, or orange when an exception covers them."]],
   [["cycle", ": a tag on a module's box when it and other modules use one another in a loop; hover the tag for them."]],
   [["A file on several levels", " spans their bands: red, or orange when an exception covers it."]],
   [["An arrow", " stands for the dependencies between two boxes; hover or select it for how many. It leaves at the band most of them start in, and enters where most end."]],
@@ -92,7 +118,7 @@ function structureHtml(view, unread, sources, src = "") {
   const bad = unread.length
     ? `<details class="sv-unread"><summary>${plural(unread.length, "file")} of the structure could not be read</summary><ul>${unread.map((m) => `<li><span class="mono">${esc(m.where)}</span> — ${esc(m.what)}</li>`).join("")}</ul></details>`
     : "";
-  const rows = view.modules.map((m) => `<tr><td class="mono">${esc(m.p)}</td><td>${esc(levelsOf(m))}</td><td class="mono">${entryCell(m)}</td><td class="num">${m.total == null ? "—" : `${countInWords(m.reached, "none")} of ${m.total}`}${m.pastInterface ? ` <span class="sv-past">${m.pastInterface} past the interface</span>` : ""}</td></tr>`).join("");
+  const rows = view.modules.map((m) => `<tr><td class="mono">${esc(m.p)}</td><td>${esc(levelsOf(m))}</td><td class="mono">${entryCell(m)}</td><td class="num">${drawCountCell(m)}</td></tr>`).join("");
   return [
     `<h2>Levels and modules</h2>`,
     `<p class="s">${sources}</p>`,
@@ -105,7 +131,7 @@ function structureHtml(view, unread, sources, src = "") {
     `<div class="sv-tip" id="sv-tip"></div>`,
     `</div>`,
     `<script type="application/json" id="sv-data">${jsonInScript(view)}</script>`,
-    `<details class="sv-table"><summary>The modules as a table</summary><div class="scroll"><table><thead><tr><th>Module</th><th>Level</th><th>Entry</th><th>Reached from outside</th></tr></thead><tbody>${rows}</tbody></table></div></details>`,
+    `<details class="sv-table"><summary>The modules as a table</summary><div class="scroll"><table><thead><tr><th>Module</th><th>Level</th><th>Entry</th><th>Files and the way in</th></tr></thead><tbody>${rows}</tbody></table></div></details>`,
   ].filter(Boolean).join("\n");
 }
 
@@ -183,20 +209,17 @@ const STRUCTURE_CSS = `
   .sv .card.pkg .body { fill: var(--package, none); stroke: var(--card-edge, currentColor); }
   .sv .card.span .body { stroke-width: 1.4; }
   .sv .card.bad .body { stroke: var(--bad, currentColor); } .sv .card.exc .body { stroke: var(--warn, currentColor); }
-  .sv .card.sel .body { stroke: var(--accent, currentColor); stroke-width: 2.6; }
-  .sv .card:hover .body { stroke: var(--ink, currentColor); }
+  /* a box keeps its border's colour in every mode; hovered, selected and reached by Tab only thicken it, Tab's dashed */
+  .sv .card:hover .body { stroke-width: 1.8; } .sv .card.sel .body { stroke-width: 2.6; }
   .sv .card .title { fill: var(--ink, currentColor); font: 500 13.5px var(--body); }
   .sv .card.pkg .title { fill: var(--accent, currentColor); font: italic 500 14px var(--body); }
   .sv .card .rule { stroke: var(--card-edge, currentColor); stroke-width: 1; }
   .sv .card .ln { fill: var(--ink, currentColor); font: 12px var(--mono); }
   .sv .card .ln.priv, .sv .card .ln.more, .sv .card .ln.type { fill: var(--muted, currentColor); }
-  .sv .card .lvtag { fill: var(--muted, currentColor); font: 10.5px var(--mono); }
+  .sv .card .usage, .sv .card .more-chips { fill: var(--muted, currentColor); font: 10.5px var(--mono); }
   .sv .card .stat { fill: var(--muted, currentColor); font: 11px var(--body); }
   .sv .card .stat .bad { fill: var(--bad, currentColor); font-weight: 600; } .sv .card .stat .exc { fill: var(--warn, currentColor); font-weight: 600; }
   .sv .card .strip.occ { fill: var(--accent, currentColor); } .sv .card .strip.gap { stroke: var(--accent, currentColor); stroke-width: 4; stroke-dasharray: 5 4; }
-  .sv .card .gauge-rest { fill: var(--card-edge, currentColor); opacity: .35; }
-  .sv .card .gauge-ok { fill: var(--accent, currentColor); }
-  .sv .card .gauge-past { fill: var(--bad, currentColor); }
   .sv .card .chip rect { fill: var(--chip, none); stroke: var(--card-edge, currentColor); stroke-width: 1; }
   .sv .card .chip.bad rect { stroke: var(--bad, currentColor); } .sv .card .chip.exc rect { stroke: var(--warn, currentColor); }
   .sv .card .chip text { fill: var(--muted, currentColor); font: 10.5px var(--mono); }
@@ -206,7 +229,7 @@ const STRUCTURE_CSS = `
   .sv .card .part text { fill: var(--ink, currentColor); font: 11px var(--mono); }
   .sv .card .part:hover rect { stroke: var(--ink, currentColor); } .sv .card .part.sel rect { stroke: var(--accent, currentColor); stroke-width: 2; }
   .sv .card .stub { stroke: var(--card-edge, currentColor); stroke-width: 1; } .sv .card .stub.bad { stroke: var(--bad, currentColor); } .sv .card .stub.exc { stroke: var(--warn, currentColor); }
-  .sv .card { cursor: pointer; } .sv .card:focus { outline: none; } .sv .card:focus .body { stroke: var(--accent, currentColor); }
+  .sv .card { cursor: pointer; } .sv .card:focus { outline: none; } .sv .card:focus-visible .body { stroke-width: 2.6; stroke-dasharray: 7 4; }
   .sv .edge { fill: none; stroke: var(--muted, currentColor); stroke-width: 1.3; opacity: .75; }
   .sv .edge.type, .sv .edge.impl { stroke-dasharray: 5 4; }
   .sv .edge.rel { stroke: var(--accent, currentColor); }
@@ -223,6 +246,7 @@ const STRUCTURE_CSS = `
   .sv marker path.solid { fill: var(--ground, none); } .sv marker path.fill { fill: var(--accent, currentColor); }
   .sv-tip { position: fixed; pointer-events: none; background: var(--ink); color: var(--ground); font: 12px/1.4 var(--mono); padding: 6px 8px; border-radius: 4px; max-width: 520px; display: none; z-index: 9; }
   .sv-past, .sv-table .bad { color: var(--bad); font-weight: 500; }
+  .sv-table .exc { color: var(--warn); font-weight: 500; }
   .sv-unread { margin: 8px 0; color: var(--warn); }
   .sv-table { margin: 6px 0 18px; }
   .sv-table table { border-collapse: collapse; font-size: 13px; width: 100%; }
@@ -232,7 +256,7 @@ const STRUCTURE_CSS = `
 `;
 
 // The originals the parts call, by their source, MARK as JSON; each names only what the page's script also holds.
-const ORIGINALS = [`const MARK = ${JSON.stringify(MARK)};`, ...[plural, countInWords, reviewPointKind, reviewPointOrder, drawsRed, outwardFirst].map((f) => f.toString())].join("\n");
+const ORIGINALS = [`const MARK = ${JSON.stringify(MARK)};`, ...[plural, countInWords, moduleCountWords, reviewPointKind, reviewPointOrder, drawsRed, outwardFirst].map((f) => f.toString())].join("\n");
 // The page's script: the originals, then every function of the parts, each by its own source, then the client called
 // once, in one function scope of their own, so no name reaches the page's. Its value is the drawing's one entry,
 // tabDrawing: a suite runs this text and calls it.

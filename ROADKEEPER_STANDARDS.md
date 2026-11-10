@@ -41,7 +41,7 @@ Every rule here is a default. A rule that opens with a condition ("with a databa
 
 Changed code is held to these; case conventions stay the project's.
 
-- A name says what the thing is for. A generic word alone (`data`, `info`, `item`, `result`, `value`, `obj`, `tmp`, `manager`, `handler`, `util`, `helper`) is a finding.
+- A name says what the thing holds or does; one that does not is a finding, renamed where it is caught.
 - A function's name is a verb phrase, a boolean's a question (`isEmpty`, `hasRows`), a class's or a value's a noun phrase.
 - One word per idea across the code. A term the code leans on lives in `GLOSSARY.md`, and the code uses the glossary's word, never a synonym the glossary lists to avoid; `fetch`, `get` and `load` never name one act.
 - Two names never differ by noise alone (`a1` and `a2`, `data2`, `theUser` beside `user`).

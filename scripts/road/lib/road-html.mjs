@@ -11,18 +11,19 @@
 //
 // Under the title, the lead: what the project is, the one-pager's first paragraph. Then three tabs: Progress (the
 // counters; the current milestone's bar; the groups along the rail, road-progress.mjs's; the versions and the bets),
-// Waiting on you (the open waiting-on-you issues), both under the tracker's read line, Architecture (the no-structure
-// line, or the structure part: the report's unread, stale and level-name lines and the structure drawing; then
-// ARCHITECTURE.md).
+// Waiting on you (the open waiting-on-you issues, today's first, then those set aside), both under the tracker's read
+// line, Architecture (the no-structure line, or the structure part: the report's unread, stale and level-name lines
+// and the structure drawing; then ARCHITECTURE.md).
 
 import { functionSources } from "../../_function-sources.mjs";
 import { countInWords, esc, plural } from "../../_text.mjs";
+import { FAILURE_KIND } from "../../_tracker-failure-kinds.mjs";
 import * as diagramClientFunctions from "./diagram-client.mjs";
 import { inline, markdownSubset } from "./markdown-subset.mjs";
 import * as roadClientFunctions from "./road-client.mjs";
 import { named, renderLegend } from "./road-key.mjs";
 import { dayOf } from "./road-model.mjs";
-import { closeSaid, issueRef, issueTitleLink, longDate, READY_TO_CLOSE_LINK, renderGroups, shownSummaryOf } from "./road-progress.mjs";
+import { closeSaid, issueRef, issueTitleLink, longDate, READY_TO_CLOSE_LINK, renderGroups, shownLeadOf } from "./road-progress.mjs";
 import { roadIcon } from "./road-icon.mjs";
 import { ROAD_STYLE } from "./road-style.mjs";
 import * as tabsClientFunctions from "./tabs-client.mjs";
@@ -68,12 +69,20 @@ function renderVersionsTable(road) {
   return `<h2>Versions</h2><div class="scroll"><table><tr><th>Version</th><th>State</th><th>What it can do</th></tr>${rows.join("")}</table></div>`;
 }
 
-// The bets table, under a line saying what it holds.
+// How many of the `poolSize` open issues name a bet, `betCount` of them, at least one: the noun agreeing with the pool,
+// the verb with `betCount`; all of them said "All", the pool's one "The one".
+function sayBetCount(betCount, poolSize) {
+  if (poolSize === 1) return "The one open issue names a bet: what must be true for it to be worth building.";
+  const which = betCount === poolSize ? `All ${poolSize}` : `${betCount} of ${poolSize}`;
+  return `${which} open issues ${betCount === 1 ? "names" : "name"} a bet: what must be true for each to be worth building.`;
+}
+
+// The bets table, under a line saying how many of the open issues it draws from name a bet.
 function renderBets(road) {
   if (!road.bets.length) return "";
   const rows = road.bets.map((b) => `<tr><td>${issueTitleLink(b.issue)}</td><td>${inline(b.bet)}</td><td class="num">${esc(b.version || "no milestone yet")}</td></tr>`).join("");
-  const says = `<p class="s">What each open issue rests on: what must be true for it to be worth building. Where is its version, or no milestone yet.</p>`;
-  return `<h2>Bets the road rests on</h2>${says}<div class="scroll"><table><tr><th>Issue</th><th>The bet</th><th>Where</th></tr>${rows}</table></div>`;
+  const says = `<p class="s">${sayBetCount(road.bets.length, road.betPoolSize)}</p>`;
+  return `<h2>Bets the road rests on</h2>${says}<div class="scroll"><table><tr><th>Issue</th><th>The bet</th><th>Version</th></tr>${rows}</table></div>`;
 }
 
 // what each flag says after its issue's number
@@ -186,15 +195,32 @@ function renderBar(road) {
   return `<div class="progress">${anchor}<p class="t">${heading} <span class="count">· ${said}</span></p>${meterOf(p.filled)}${m.readyToClose ? readyLine(m, p.realUsesOpen) : ""}</div>`;
 }
 
-// Where the page's data came from, said first. `read` is how the tracker was read; `road` null means no snapshot.
+// What a failed read says, by its kind (FAILURE_KIND, the tracker's read names it), as HTML; no text of `gh`'s.
+const FAILURE_WORDS = new Map([
+  [FAILURE_KIND.noAnswer, "GitHub did not answer"],
+  [FAILURE_KIND.notSignedIn, "gh is not signed in to GitHub: run <code>gh auth login</code>"],
+  [FAILURE_KIND.ghMissing, "gh is not installed"],
+  [FAILURE_KIND.rateLimited, "GitHub is limiting reads for now: it passes within the hour"],
+  [FAILURE_KIND.other, "GitHub refused the read"],
+]);
+// a kind with no words is a state the tracker never gives: it stops the draw
+function sayFailure(kind) {
+  if (!FAILURE_WORDS.has(kind)) throw new Error(`no words for the failed read's kind: ${kind}`);
+  return FAILURE_WORDS.get(kind);
+}
+
+// Where the page's data came from, said first. `read` is how the tracker was read; `road` null means no snapshot. A
+// failed read carries its kind (the tracker's read always names one): one with none stops the draw.
 function trackerLine(read, road) {
   const s = road && road.tracker;
   const when = s && s.fetched ? `${longDate(dayOf(s.fetched))} ${s.fetched.slice(11, 16)} UTC` : "an unknown date";
   const repo = s && s.repo ? (s.url ? `<a href="${esc(s.url)}/issues" rel="noopener">${esc(s.repo)}</a>` : esc(s.repo)) : "the tracker";
+  if (read.error && !read.failure) throw new Error("a failed tracker read carries no kind");
+  const failed = Boolean(read.failure);
   if (read.live) return `<p class="s">Read from ${repo} on ${when}.</p>`;
-  if (s && !read.error) return `<p class="s">Drawn offline from the snapshot of ${repo}, ${when}.</p>`;
-  if (s) return `<p class="unread">The tracker could not be read (${esc(read.error)}); drawn from the snapshot of ${when}.</p>`;
-  return `<p class="unread">The tracker could not be read${read.error ? ` (${esc(read.error)})` : ""}, and there is no snapshot at ${esc(read.snapshotPath)}: the road is empty.</p>`;
+  if (s && !failed) return `<p class="s">Drawn offline from the snapshot of ${repo}, ${when}.</p>`;
+  if (s) return `<p class="unread">The tracker could not be read (${sayFailure(read.failure)}); drawn from the snapshot of ${when}.</p>`;
+  return `<p class="unread">The tracker could not be read${failed ? ` (${sayFailure(read.failure)})` : ""}, and there is no snapshot at ${esc(read.snapshotPath)}: the road is empty.</p>`;
 }
 
 function renderRoad(view, sizeStep) {
@@ -215,26 +241,36 @@ function trackerName(url) {
   return host === "github.com" ? "GitHub" : host;
 }
 
-// What an orange card is, said under the read line while a card is drawn: one waiting past the threshold, `days`.
+// What an orange card is, said under the read line while a card of today's is drawn: one waiting past the threshold,
+// `days`.
 const orangeLine = (days) => `<p class="s">An orange card has waited on you for more than ${esc(plural(days, "day"))}.</p>`;
 
-// Where an answer to a card goes, said under the orange line while a card is drawn.
+// Where an answer to a card goes, said under the orange line while any card is drawn.
 const answerLine = (url) => `<p class="s">To answer one, click its number to open the issue on ${esc(trackerName(url))}, and write your answer there as a comment.</p>`;
 
+// The line over the cards set aside, in the read line's look.
+const SET_ASIDE_LINE = `<p class="s">Waiting on something else first, so nothing to do yet:</p>`;
+
+// What the tab says with no card of today's: nothing today while some are set aside, else nothing at all.
+const makeNothingLine = (setAside) => `<p>Nothing is waiting on you${setAside.length ? " today" : ""}.</p>`;
+
+// Waiting on you: today's cards, then, under their line, those set aside, whole; the answered fold.
 function renderYou(view) {
   const road = view.road;
   const out = [trackerLine(view.read, road)];
   if (!road) return out.join("\n");
-  if (road.waiting.open.length) out.push(orangeLine(road.waiting.lateAfterDays), answerLine(road.tracker.url));
+  const { open, setAside, answered } = road.waiting;
+  if (open.length) out.push(orangeLine(road.waiting.lateAfterDays));
+  if (open.length || setAside.length) out.push(answerLine(road.tracker.url));
   // the tab's heading for a screen reader, so its cards' h3 skip no level under the page's h1; the nav shows its name
   out.push(`<h2 class="unseen">Waiting on you</h2>`);
   const card = (i) => {
     const age = i.age === null ? "" : `<p class="s">${i.age === 0 ? "waiting since today" : `waiting for ${plural(i.age, "day")}`}</p>`;
     return `<div class="card${i.late ? " late" : ""}"><h3>${issueTitleLink(i)}</h3>${age}${markdownSubset(i.body, 4)}</div>`;
   };
-  const { open, answered } = road.waiting;
-  if (!open.length) out.push(`<p>Nothing is waiting on you.</p>`);
+  if (!open.length) out.push(makeNothingLine(setAside));
   out.push(open.map(card).join(""));
+  if (setAside.length) out.push(SET_ASIDE_LINE, setAside.map(card).join(""));
   if (answered.length) out.push(`<details class="fold"><summary>${plural(answered.length, "answered issue")}</summary><ul>${answered.map((i) => `<li>${issueRef(i)} ${inline(i.title)} <span class="n">${esc(i.closedAt ? `closed on ${longDate(dayOf(i.closedAt))}` : "closed")}</span></li>`).join("")}</ul></details>`);
   return out.join("\n");
 }
@@ -279,11 +315,11 @@ const pageHead = (name, tokenCss, struct) => [
 </style>`,
 ].join("\n");
 
-// The page's lead, under its title: the one-pager's first paragraph, taken as an issue's Summary is, drawn inline;
+// The page's lead, under its title: the one-pager's first paragraph, made as an issue's Summary is, drawn inline;
 // none with no one-pager read, or no paragraph in it.
 function leadOf(onePager) {
-  const summary = shownSummaryOf(onePager);
-  return summary ? `<p class="lead">${inline(summary)}</p>` : "";
+  const lead = shownLeadOf(onePager);
+  return lead ? `<p class="lead">${inline(lead)}</p>` : "";
 }
 
 // One tab's link, `count` what waits on it: with something waiting, a badge, and a name saying the count apart from
@@ -292,7 +328,7 @@ const tabLink = ([id, label, count]) => (count
   ? `<a href="#${id}" aria-label="${esc(label)}, ${count} waiting">${esc(label)}<span class="badge">${count}</span></a>`
   : `<a href="#${id}">${esc(label)}</a>`);
 
-// The page. `view`: { road, read: { live, error, snapshotPath }, architecture, onePager, tokens, structure,
+// The page. `view`: { road, read: { live, error, failure, snapshotPath }, architecture, onePager, tokens, structure,
 // projectName, linkBase }, where `onePager` is the one-pager's text, null when unread, `tokens` is the token file,
 // { path, css }, `css` null when unread, and `structure` the Architecture tab's part the structure module drew at this
 // size step ({ atop, html, css, js, leftOut }), or null with no structure declared.

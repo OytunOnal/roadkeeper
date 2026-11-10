@@ -9,7 +9,7 @@
 // are pytest's own. The check at write reads a linter's lines `path:line:col: CODE message`, which ruff, flake8, pylint
 // by its template and Roadkeeper's check (scripts/tools/check.py) print.
 
-import { readResultsCases } from "./junit-results.mjs";
+import { caseFromTestcase, readResultsCases } from "./junit-results.mjs";
 import { isUnusedName } from "./lint-message.mjs";
 
 const toDottedPath = (file) => file.replace(/\.py$/, "").replaceAll("/", ".");
@@ -32,7 +32,7 @@ function readCase(raw, files) {
   const past = file ? stripFilePath(raw.classname, file) ?? raw.classname : raw.classname;
   const classes = file ? past.split(".") : [past];
   const id = [...classes.filter(Boolean), raw.name].join("::");
-  return { file, id, name: id, outcome: raw.outcome, detail: raw.detail };
+  return caseFromTestcase(raw, file, id);
 }
 
 // The cases of a run given `files` in the tree at `root`, read from its JUnit file at `results`: none when it wrote none.

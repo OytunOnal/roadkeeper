@@ -1,9 +1,10 @@
 // @level domain
 // Roadkeeper — the test cases of a JUnit XML text: each <testcase>, with the names of the <testsuite> elements around it,
 // its name, classname and file attributes, and its outcome: FAIL with a <failure> or <error> inside, else SKIP with a
-// <skipped>, else PASS; a FAIL's detail is its failure's message, else its text. A hand scanner over the text, bounded
-// by its length: comments, CDATA outside a failure, processing instructions and declarations are passed over;
-// attribute values are decoded of the five named entities and the numeric ones. Reads no tag it cannot parse.
+// <skipped>, else PASS; a FAIL's detail is its failure's message, else its text, and its text is kept beside. A hand
+// scanner over the text, bounded by its length: comments, CDATA outside a failure, processing instructions and
+// declarations are passed over; attribute values are decoded of the five named entities and the numeric ones. Reads no
+// tag it cannot parse.
 
 const DETAIL_KEPT = 2000; // characters of a failure's text kept: its message and the first lines of its stack
 const NAME = /[A-Za-z_][\w.:-]*/y; // an element's or attribute's name, as JUnit writers spell them
@@ -87,7 +88,8 @@ function onText(state, text) {
   if (kept) state.open.text = (state.open.text + text).slice(0, DETAIL_KEPT);
 }
 
-// The test cases of the JUnit text, in their order: { suites, name, classname, file, outcome, detail }.
+// The test cases of the JUnit text, in their order: { suites, name, classname, file, outcome, detail, text }, `text`
+// the failure's text, "" for none.
 export function junitCases(text) {
   const state = { suites: [], open: null, inFailure: false, cases: [] };
   let at = 0;
@@ -98,5 +100,5 @@ export function junitCases(text) {
     else if (markup.name) onTag(state, markup);
     at = markup.end;
   }
-  return state.cases.map(({ text: failureText, ...c }) => ({ ...c, detail: (c.detail || failureText).trim() }));
+  return state.cases.map((c) => ({ ...c, detail: (c.detail || c.text).trim(), text: c.text.trim() }));
 }

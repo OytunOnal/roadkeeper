@@ -1,10 +1,11 @@
 // @level infrastructure
-// Roadkeeper — red-before: today's named test files run on an older commit's code. The tree, in a throwaway folder of the OS
-// temp folder (commit-tree.mjs): the commit's files, its other test files kept, so a suite reading them finds them;
-// today's named test files over its own; the install linked in, the worktree's own, else its main checkout's; beside
-// it, each sibling today's package.json names, said before the cases, linked or not. There `beforeTests` runs, then
-// `runTests` (test-run.mjs) on the named files alone. Prints each named file's cases by name with their outcomes, a
-// failing or skipped case's detail under it, then the counts.
+// Roadkeeper — red-before: today's named test files run on an older commit's code. The tree, in a throwaway folder of
+// the OS temp folder (commit-tree.mjs): the commit's files, its other test files kept, so a suite reading them finds
+// them; only today's named files over its own, the test files and any helper they import named beside them; the
+// install linked in, the worktree's own, else its main checkout's; beside it, each sibling today's package.json names,
+// said before the cases, linked or not. There `beforeTests` runs, then `runTests` (test-run.mjs) on the named files
+// alone. Prints each named file's cases by name with their outcomes, a failing or skipped case's detail under it, a
+// crashed file's cases UNKNOWN under its line naming the crash, then the counts.
 //
 // Exits 0 once the tests ran, whatever their cases said; 2 when the commands file refuses or no tree could be built; 3
 // when a named file is no plain file of the working tree.
@@ -29,7 +30,7 @@ export async function redBefore(call, say) {
   if (setup.said) say(`red-before: ${setup.said}`);
   const plan = { hash, copied: named, install: setup.commands.install, installFrom: setup.installFrom };
   return inCommitTree({ root: setup.root, label: "red-before", plan }, say, async (scratch) => {
-    say(`red-before: ${hash.slice(0, 12)}'s code, ${plural(named.length, "test file")}`);
+    say(`red-before: ${hash.slice(0, 12)}'s code, ${plural(named.length, "named file")}`);
     const cases = await treeCases({ ...setup, tree: scratch.tree, files: named, results: scratch.results, label: "red-before" }, say);
     for (const line of listedByFile(cases)) say(line);
     say(`red-before: ${counted(cases)}`);

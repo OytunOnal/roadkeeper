@@ -44,6 +44,7 @@ It is for a developer who builds and maintains software in Claude Code and wants
 </details>
 
 ```mermaid
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#f3f0ea", "primaryTextColor": "#22261f", "primaryBorderColor": "rgb(129, 100, 0)", "lineColor": "rgb(129, 100, 0)", "edgeLabelBackground": "#f3f0ea"}}}%%
 flowchart TD
   I["idea or existing code"] --> P["brainstorm, design,<br/>plan versions"]
   P --> S["slice by slice: spec,<br/>build test-first,<br/>review and<br/>structure check,<br/>merge"]
@@ -71,7 +72,14 @@ What changed in each version: the [releases](https://github.com/OytunOnal/roadke
 
 ## Try it
 
-A plugin runs code in your session. Roadkeeper's are the hooks under `scripts/` ([What you can rely on](#what-you-can-rely-on)), and each acts only in a project holding `docs/roadkeeper/`: in your other projects they do nothing. `nudge`, at each session start, reads the tracker through `gh` with your login and rewrites its snapshot, `docs/roadkeeper/issues.json`, which your `.gitignore` names once the tools' setup has run; on the default branch only, it also redraws The Road, `docs/roadkeeper/road.html`, for you to commit. `road-redraw`, after a command that writes to the tracker, reads it the same way and, on the default branch only, rewrites the snapshot and redraws The Road, for you to commit. `merge-guard` reads the pull request a `gh` merge names; nothing else leaves your machine. The check at write runs your project's linter, as your `docs/roadkeeper/commands.json` names it. Read them, and the scripts they run or import from `scripts/`, before you install it.
+A plugin runs code in your session. Roadkeeper's are the hooks under `scripts/` ([What you can rely on](#what-you-can-rely-on)), and each acts only in a project holding `docs/roadkeeper/`: in your other projects they do nothing. What they read and write:
+
+- `nudge`, at each session start, reads the tracker through `gh` with your login and rewrites its snapshot, `docs/roadkeeper/issues.json`; on the default branch only, it also redraws The Road, `docs/roadkeeper/road.html`, for you to commit.
+- `road-redraw`, after a command that writes to the tracker, reads it the same way and, on the default branch only, rewrites the snapshot and redraws The Road, for you to commit.
+- `merge-guard` reads the pull request a `gh` merge names.
+- The check at write runs your project's linter, as your `docs/roadkeeper/commands.json` names it.
+
+Nothing else leaves your machine. Genesis or adopt sets up the project's tools, and with them your `.gitignore` names the snapshot ([Ignored files](skills/slice/references/project-tools.md)). Read the hooks, and the scripts they run or import from `scripts/`, before you install it.
 
 1. In a terminal, install the skills Roadkeeper calls. This installs all of Matt Pocock's skills, for every project on your machine (`-g`), without asking (`-y`):
 
@@ -135,13 +143,15 @@ A change to one of these that makes you act, a file to move or a command to type
 
 The next versions, by their titles:
 
-- v3.0.1 — The Road says plainly what it shows
 - v3.0.2 — The tools and the plugin's parts are deep modules
+- v3.0.3 — The code that draws The Road and plans a change lives in folders of their own
 - v3.1.0 — Roadkeeper's own tools and rules cost a session less
 - v3.1.1 — Roadkeeper's tools say what they did, and a slice runs without a hand
+- v3.1.2 — Roadkeeper's skills read short and general
 - v3.2.0 — The checks see more
 - v3.3.0 — Every project's checks fit its code
 - v3.3.1 — Roadkeeper's own checks are kept once and prove a change in one run
+- v3.4.0 — The Road shows a project's decisions, its words and a slice's plan
 
 ## Proven on
 

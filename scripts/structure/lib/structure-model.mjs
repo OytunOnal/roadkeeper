@@ -23,6 +23,7 @@ import { DATE, controlsReplaced, isCalendarDate, readerLines, versionOf } from "
 export const EDGE_KINDS = ["dependency", "type-only", "implements", "inheritance"];
 // the files read as code: JavaScript and TypeScript, as dependency-cruiser and the compiler parse them, Astro, Python
 export const SOURCE = /\.(?:[cm]?[jt]s|[jt]sx|astro|py)$/;
+export const isCodeEdge =(e) => SOURCE.test(e.from) && SOURCE.test(e.to); // the only edges the check rules and the tab draws
 export const isAstro = (file) => file.endsWith(".astro");
 export const isPython = (file) => file.endsWith(".py");
 const RELATION_KINDS = ["association", "aggregation", "composition"];

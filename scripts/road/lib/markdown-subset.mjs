@@ -1,8 +1,9 @@
 // @level presentation
 // Roadkeeper — the Markdown subset The Road draws issue text and ARCHITECTURE.md with, as HTML. Deterministic, no library.
 //
-// Five exports: markdownSubset(text, headingLevel) for blocks, inline(text, { links }) for one line, and for an
-// issue's Summary as its card shows it, withLfEndings(text), listItems(lines, from) and cutInline(text, n). The text is
+// Six exports: markdownSubset(text, headingLevel) for blocks, inline(text, { links }) for one line, and for an
+// issue's Summary as its card shows it, withLfEndings(text), HEADING_LINE, listItems(lines, from) and
+// cutInline(text, n). The text is
 // a stranger's: all of it is escaped, a link keeps to the allow-listed schemes, and a mermaid fence loses its click
 // lines, said.
 
@@ -122,6 +123,9 @@ export function markdownSubset(text, headingLevel) {
 // a body with CRLF.
 export const withLfEndings = (text) => String(text || "").replace(/\r\n?/g, "\n");
 
+// A heading's line: `#` to `######`, then a space or a tab, then its text; a `#` joined to the word after it is text.
+export const HEADING_LINE = /^(#{1,6})\s+(.*)$/;
+
 // The text's blocks, in order: each drawn HTML, but a heading, { depth, html }, its `#` count and its text drawn, and a
 // quote, { quote }, its own blocks.
 function parsedBlocks(text) {
@@ -140,7 +144,7 @@ function parsedBlocks(text) {
       continue;
     }
     if (/^\s*$/.test(line)) { flush(); continue; }
-    const h = /^(#{1,6})\s+(.*)$/.exec(line);
+    const h = HEADING_LINE.exec(line);
     if (h) {
       flush();
       out.push({ depth: h[1].length, html: inline(h[2].replace(/\s*#+\s*$/, "")) });
@@ -195,32 +199,86 @@ function drawnBlocks(blocks, levelOf) {
   }).join("\n");
 }
 
-const LIST_ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/;
+const LIST_ITEM = /^(\s*)([-*+]|\d{1,9}[.)])\s+(.*)$/;
 
-// The list starting at line `from`: its items, each without its marker, an indented line folded into the item above,
-// and `next`, the first line past it, as an unindented line that starts no item ends it. Null when line `from` starts
-// no item.
-export function listItems(lines, from = 0) {
+// a line of spaces alone is blank, as a paragraph's end is read
+const BLANK = /^\s*$/;
+const indentOf = (line) => /^\s*/.exec(line)[0].length;
+
+// A line opening a block of its own: a fence, a table row, a quote or a rule.
+const opensBlock = (line) => Boolean(fenceStep(null, line.trim()).fence) || /^\s*(\||>|(---|\*\*\*|___)\s*$)/.test(line);
+
+// Whether the list of `entries` goes on at `line`, past a blank line: an item does, and an indented line of text with
+// an item indented less above it, which holds it.
+const goesOnAfterBlank = (line, entries) => line !== undefined && (LIST_ITEM.test(line)
+  || (/^\s+\S/.test(line) && !opensBlock(line) && entries.some((e) => !e.para && e.indent < indentOf(line))));
+
+// The list starting at line `from`: its entries, in order, and `next`, the first line past it. An item is an entry:
+// its marker's indentation, whether the marker is a number and the number, and its text without the marker. An
+// indented line that starts no item is folded into the entry above; past a blank line it is an entry of its own, a
+// paragraph (`para`), held by the item indented less above it. A blank line ends the list unless the list goes on
+// after it; an unindented line that starts no item ends it. Null when line `from` starts no item.
+function readListEntries(lines, from) {
   if (!LIST_ITEM.test(lines[from] || "")) return null;
-  const items = [];
-  let i = from;
+  const entries = [];
+  let i = from, afterBlank = false;
   while (i < lines.length) {
     const m = LIST_ITEM.exec(lines[i]);
-    if (m) items.push(m[3]);
-    else if (/^\s+\S/.test(lines[i])) items[items.length - 1] += " " + lines[i].trim();
-    else break;
-    i++;
+    if (m) entries.push({ indent: m[1].length, ordered: /\d/.test(m[2]), start: parseInt(m[2], 10), text: m[3] });
+    else if (BLANK.test(lines[i])) {
+      let j = i;
+      while (j < lines.length && BLANK.test(lines[j])) j++;
+      if (!goesOnAfterBlank(lines[j], entries)) break;
+      [i, afterBlank] = [j, true];
+      continue;
+    } else if (!/^\s+\S/.test(lines[i])) break;
+    else if (afterBlank) entries.push({ indent: indentOf(lines[i]), para: true, text: lines[i].trim() });
+    else entries[entries.length - 1].text += " " + lines[i].trim();
+    [i, afterBlank] = [i + 1, false];
   }
-  return { items, next: i };
+  return { entries, next: i };
 }
 
-// The list starting at `from`, drawn, and the index of its last line.
+// The list starting at line `from` as one run of items, an item indented under another among them: each entry's text,
+// an item's without its marker, and `next`, the first line past the list. Null when line `from` starts no item.
+export function listItems(lines, from = 0) {
+  const list = readListEntries(lines, from);
+  return list && { items: list.entries.map((e) => e.text), next: list.next };
+}
+
+// The list starting at `from`, drawn, its items nested by indentation, and the index of its last line. An entry
+// indented less than the list's first ends it; the next list starts there.
 function mdList(lines, from) {
-  const ordered = /\d/.test(LIST_ITEM.exec(lines[from])[2]);
-  const { items, next } = listItems(lines, from);
-  const tag = ordered ? "ol" : "ul";
+  const { entries, next } = readListEntries(lines, from);
+  let html = "";
+  for (let at = 0; at < entries.length;) {
+    const list = drawNestedList(entries, at);
+    html += list.html;
+    at = list.next;
+  }
+  return { next: next - 1, html };
+}
+
+// The list of entries from `at` drawn at the first one's indentation, ordered as its marker says and numbered from its
+// number: an entry indented past it goes inside the item above, a list at any depth or a paragraph, and the list goes
+// on past it; an item indented less, an item of the other kind or a paragraph it does not hold ends it. `next` is the
+// entry past it.
+function drawNestedList(entries, at) {
+  const { indent, ordered, start } = entries[at];
   const box = (t) => t.replace(/^\[([ xX])\]\s*/, (_, c) => (c === " " ? "☐ " : "☑ "));
-  return { next: next - 1, html: `<${tag}>` + items.map((t) => `<li>${inline(box(t))}</li>`).join("") + `</${tag}>` };
+  const sibling = (e) => !e.para && e.indent >= indent && e.ordered === ordered;
+  let items = "", i = at;
+  while (i < entries.length && sibling(entries[i])) {
+    let item = inline(box(entries[i++].text));
+    while (i < entries.length && entries[i].indent > indent) {
+      const inner = entries[i].para ? { html: `<p>${inline(entries[i].text)}</p>`, next: i + 1 } : drawNestedList(entries, i);
+      item += inner.html;
+      i = inner.next;
+    }
+    items += `<li>${item}</li>`;
+  }
+  if (!ordered) return { next: i, html: `<ul>${items}</ul>` };
+  return { next: i, html: `<ol${start === 1 ? "" : ` start="${start}"`}>${items}</ol>` };
 }
 
 // a table row's cells, with `\|` read as a pipe inside a cell; null for a line that is no row

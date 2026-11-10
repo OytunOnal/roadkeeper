@@ -208,13 +208,19 @@ export function importSteps(nodes, arrows) {
   return lvl;
 }
 // cardRed: whether a box draws red — it reaches outside the view by an uncovered outward edge, its module's interface is
-// skipped into its own files or its inner modules', its module has several root files, or it hides an outward edge.
+// skipped into its own files or its inner modules', its module's several root files draw red, or it hides an outward
+// edge.
 export function cardRed(chips, m, inside) {
-  return chips.some(function (c) { return c.mark === MARK.outward; }) || (m && (m.pastInterface > 0 || innerPastCount(m) > 0 || severalRootFiles(m))) || !!(inside && inside.out);
+  return chips.some(function (c) { return c.mark === MARK.outward; }) || (m && (m.pastInterface > 0 || innerPastCount(m) > 0 || drawsRed(markRootFiles(m)))) || !!(inside && inside.out);
 }
 // severalRootFiles: whether more than one source file sits at a module's root.
 export function severalRootFiles(m) {
   return m.rootFiles.length > 1;
+}
+// markRootFiles: the mark of a module's root files as the check rules them — several, outward with no exception,
+// excepted, or due; one, inward.
+export function markRootFiles(m) {
+  return severalRootFiles(m) ? m.rootFilesMark : MARK.inward;
 }
 // rootFileCount: how many source files sit at a module's root, the ones over the page cap too.
 export function rootFileCount(m) {
@@ -242,15 +248,17 @@ export function drawingOf(V) {
 export function rowIn(D, l) {
   return l >= 0 && D.rows[l] != null ? D.rows[l] : D.none;
 }
-// boxOf: box `id` of a view (`viewCounts`: its aggregate, agg, and its import steps, steps): its red ruling, its mark
-// when its file mixes levels (0 for none), what it hides and its chips — what it reaches outside the view, red first,
-// then orange, then the most edges. A box of mixed levels carries its mark: red with no exception or a due one, orange
-// excepted.
+// boxOf: box `id` of a view (`viewCounts`: its aggregate, agg, and its import steps, steps): its red ruling, whether
+// it draws orange, what it hides and its chips — what it reaches outside the view, red first, then orange, then the most
+// edges. A file of mixed levels and a module's several root files carry their mark: red with no exception or a due one,
+// orange excepted, when nothing else draws the box red.
 export function boxOf(D, id, viewCounts) {
   var chips = [], o = viewCounts.agg.outs[id] || Object.create(null), inside = viewCounts.agg.inside[id] || null, mx = D.mixed[id] ? D.mixed[id].mark : 0;
+  var m = D.mods[id], rootFilesMark = m ? markRootFiles(m) : MARK.inward;
   for (var t in o) chips.push({ t: t, n: o[t].n, mark: o[t].mark, earliest: o[t].earliest });
   chips.sort(function (a, b) { return (b.mark === MARK.outward) - (a.mark === MARK.outward) || (b.mark === MARK.excepted) - (a.mark === MARK.excepted) || b.n - a.n; });
-  return { id: id, sub: viewCounts.steps ? -(viewCounts.steps[id] || 0) : 0, chips: chips, inside: inside, mixed: mx, red: cardRed(chips, D.mods[id], inside) || drawsRed(mx) };
+  var red = cardRed(chips, m, inside) || drawsRed(mx);
+  return { id: id, sub: viewCounts.steps ? -(viewCounts.steps[id] || 0) : 0, chips: chips, inside: inside, red: red, orange: !red && (mx === MARK.excepted || rootFilesMark === MARK.excepted) };
 }
 // drawingView: view `id` of the drawing `D`, null for the top: its boxes in order (boxOf); the arrows, each one's file
 // edges outward first; the count line's totals; and how many boxes past the cap are not drawn.

@@ -16,8 +16,8 @@ import { viewRoutes } from "./tab-routes.mjs";
 import { arrowWords, chipWords, countWords, cycleLines, levelNames, pageOf } from "./tab-words.mjs";
 
 // The drawing of the view's data `V`, `measure(text, role)` giving a text's width in a role's font: title, pkg (a
-// module's title), stat (a box's header), line (a card's line), chip (an outside chip and a box's info),
-// part (a nested module's chip). Returns:
+// module's title), stat (a box's header), line (a card's line), chip (an outside chip), usage (a box's
+// usage, the line under its name), part (a nested module's chip). Returns:
 // - size: a card's line and its chips' sizes;
 // - node(id): a tree node, { id, kind, label, parent, lv }, or undefined;
 // - scene(view), null for the top: sceneOf; count(view, how), its count line: countOf;
@@ -32,8 +32,9 @@ import { arrowWords, chipWords, countWords, cycleLines, levelNames, pageOf } fro
 export function tabDrawing(V, measure) {
   // a card shows twelve lines of 16px, its 12px text with leading; a part chip is 20px tall, its 11px label with room
   // above and below and 7px left and right, and 5px apart, so two chips' outlines never touch; an outside chip is 18px
-  // tall, its 10.5px label 6px from its left and right, and 6px apart and from its box's edges
-  var LOOK = { size: { lines: 12, lineH: 16, partH: 20, partGap: 5, partPad: 7, chipH: 18, chipPad: 6, chipGap: 6 } };
+  // tall, its 10.5px label 6px from its left and right, and 6px apart and from its box's edges; a box's usage wraps onto
+  // lines 13px apart, its 10.5px text with leading
+  var LOOK = { size: { lines: 12, lineH: 16, partH: 20, partGap: 5, partPad: 7, chipH: 18, chipPad: 6, chipGap: 6, usageH: 13 } };
   var D = drawingOf(V), PG = pageOf(V, D, LOOK), drawing = { V: V, measure: measure, look: LOOK, D: D, pg: PG, routes: Object.create(null) };
   return {
     size: LOOK.size, node: function (id) { return PG.N[id]; }, scene: function (view) { return sceneOf(drawing, view); },
@@ -60,7 +61,7 @@ export function countOf(drawing, view, how) {
   return countWords(drawing.D.view(view), drawing.pg, { view: view, mode: how.mode, selected: how.selected, edge: how.edge });
 }
 // sceneOf: view `view` of `drawing` (tabDrawing's), null for the top: its bands, top to bottom, each { y, h,
-// names }; its boxes in order, each sized, placed (P) and with its insides placed (at), its tips said; its arrows,
+// names }; its boxes in reading order (sortInReadingOrder), each sized, placed (P) and with its insides placed (at), its tips said; its arrows,
 // each { e, d, look, words, access }, the arrow's file edges in e; the declared relations drawn, each { r, d, at, url,
 // tip, access }; the totals; the width and height. Each arrow's and relation's path d is routed around the boxes, all
 // together once for the view's layout (viewRoutes; `drawing` keeps each view's last routes), so the toolbar, a
@@ -85,10 +86,18 @@ export function sceneOf(drawing, view) {
     if (d) relations.push({ r: r, d: d, at: mark.at, url: mark.url, tip: tip, access: { role: 'img', name: tip } });
   });
   return {
-    width: L.width, height: L.height, boxes: boxes, arrows: arrows, relations: relations,
+    width: L.width, height: L.height, boxes: sortInReadingOrder(boxes), arrows: arrows, relations: relations,
     bands: rows.map(function (r) { return { y: L.top[r], h: L.rowH[r], names: bandWords(r, V.rings) }; }),
     totals: agg.totals,
   };
+}
+// sortInReadingOrder: placed boxes as a reader's eye meets them, so the page draws them, and Tab reaches them, in that order:
+// by the band their top sits in, top band first; in a band, its lines top to bottom, each left to right. Their places
+// stay, and no two meet, so the order paints nothing differently.
+export function sortInReadingOrder(boxes) {
+  return boxes.map(function (b, i) { return { b: b, i: i }; }).sort(function (x, y) {
+    return x.b.top - y.b.top || x.b.P.y - y.b.P.y || x.b.P.x - y.b.P.x || x.i - y.i;
+  }).map(function (x) { return x.b; });
 }
 // relationEnds: declared relation `r` as a line between its boxes, leaving and entering at their top bands, in the
 // layout `L`, marked a relation (rel); a box not placed gives no band.

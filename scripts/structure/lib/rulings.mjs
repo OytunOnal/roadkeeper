@@ -7,7 +7,8 @@
 //
 // The rules: skills/slice/references/structure.md: The shape, the template's Rules, Known debt.
 
-import { MAX_DEPTH, SOURCE, closedVersions, globMatch, grouped, outward, pathAndParents, placed, printable, readerMessage, readsCode, reviewPointDue, underPath } from "./structure-model.mjs";
+import { MAX_DEPTH, SOURCE, closedVersions, globMatch, grouped, isCodeEdge, outward, pathAndParents, placed, printable, readerMessage, readsCode, reviewPointDue, underPath } from "./structure-model.mjs";
+import { codeFiles, moduleCountWords, moduleRecords } from "./module-records.mjs";
 
 // a project declares a few test patterns and a few exceptions; past these the rest are counted unread, so the check's
 // cost stays bounded by its input's size
@@ -47,7 +48,8 @@ export function testsTaken(sm, files = null) {
   const isTest = testOf(sm.tests);
   let count = 0, tested = 0;
   const lists = files ? [...files.values()] : sm.modules.map((m) => m.files || []);
-  for (const list of lists) for (const f of list) { count++; if (isTest(f)) tested++; }
+  // a module's code files only (SOURCE): a stylesheet or a data file is out of the rule without a pattern
+  for (const f of codeFiles(lists.flat()) || []) { count++; if (isTest(f)) tested++; }
   return { files: count, tested };
 }
 
@@ -86,6 +88,7 @@ const edgeKey = (e) => `${e.from}\n${e.to}\n${e.kind}`;
 //   null when none;
 // - mixed: each file of mixed levels, but a test, with its levels and the exception covering it, with whether it is
 //   due, or null;
+// - rootFiles: each module with several root files, with the exception covering them, with whether it is due, or null;
 // - the cycles, and what was not read past the caps;
 // - the structure report (GLOSSARY: Structure report), as `reportLines` below returns it.
 // `facts` is diskFacts' object, null to judge no disk.
@@ -131,10 +134,12 @@ export function rulings(sm, facts = null, judging = judgingOptions()) {
     (exception.due ? violations : debt).push({ ...v, exception });
     return exception;
   };
-  // a deep module has one entry (ADR 0005): several files at its root are one ruling naming them all, none the entry
+  // a deep module has one entry (ADR 0005): several files at its root are one ruling naming them all, none the entry.
+  // Each with the exception covering it, for the page
+  const rootFiles = new Map();
   for (const m of sm.modules) {
     if (m.level == null) report({ kind: "no-level", grade: KINDS["no-level"], module: m.path });
-    if (m.rootFiles.length > 1) report({ kind: "root-files", grade: KINDS["root-files"], module: m.path, files: [...m.rootFiles].sort() });
+    if (m.rootFiles.length > 1) rootFiles.set(m.path, report({ kind: "root-files", grade: KINDS["root-files"], module: m.path, files: [...m.rootFiles].sort() }));
   }
   // a file no module holds carries its own tag, and so does a private file: it takes no level from its entry (ADR 0005)
   const untagged = (f) => sm.fileLevels[f] == null && !isTest(f);
@@ -154,9 +159,10 @@ export function rulings(sm, facts = null, judging = judgingOptions()) {
     mixed.set(f, { levels: sm.mixed[f], exception });
   }
   // an edge into the code read — a module, or a file no module holds — is ruled; one leaving it gets no rulings, and the
-  // page counts it outside
+  // page counts it outside. A dependency with an end that is no code file, a stylesheet or a data file, gets none either
   const edges = new Map();
   for (const e of sm.edges) {
+    if (!isCodeEdge(e)) continue;
     const key = edgeKey(e), seen = edges.get(key);
     if (seen) { seen.n++; continue; }
     const a = e.fromModule ? byPath.get(e.fromModule) : null, b = e.toModule ? byPath.get(e.toModule) : null, test = isTest(e.from);
@@ -191,7 +197,7 @@ export function rulings(sm, facts = null, judging = judgingOptions()) {
   const c = moduleCycles(sm, isTest);
   for (const x of c.cycles) violations.push({ kind: "cycle", grade: KINDS["cycle"], ...x });
   const unread = { tests: Math.max(0, sm.tests.length - MAX_TESTS), exceptions: sm.exceptions.length - exceptions.length };
-  const check = { violations, debt, unread, cycles: c, edges, modules: moduleRecords(sm, edges, isTest), mixed };
+  const check = { violations, debt, unread, cycles: c, edges, modules: moduleRecords(sm, edges, isTest), mixed, rootFiles };
   return { ...check, ...reportLines({ sm, facts }, check, judging) };
 }
 
@@ -328,23 +334,23 @@ function debtLines(covered, stamping) {
   return { debt, coming };
 }
 
-// Each module reached from outside, most open first, as the page shows its record: the violations past its entry,
-// its inner modules' files reached past it, and the files past its entry an exception not yet due covers.
+// Each module reached from outside, most open first, in the page's words (moduleCountWords), the paths in them
+// printable, then its inner modules' files reached past it: after a comma, or, with none of its own files reached, as
+// the way in, after a " · ".
 function openLines(records) {
   const skipped = (m) => m.pastInterface + m.innerPast.length;
   const mods = [...records].filter(([, m]) => m.total && (m.reached || m.innerPast.length))
     .sort(([, a], [, b]) => b.reached / b.total - a.reached / a.total || skipped(b) - skipped(a));
   return mods.map(([p, m]) => {
-    const inner = m.innerPast.length ? `, ${m.innerPast.length} of its inner modules' files past it` : "";
-    const excepted = m.exceptedPast ? ` · ${m.exceptedPast} excepted` : "";
-    return `open      ${printable(p)} — ${m.reached} of ${m.total} files reached from outside, ${m.pastInterface} past its entry${inner}${excepted}`;
+    const inner = m.innerPast.length ? `${m.reached ? "," : " ·"} ${m.innerPast.length} of its inner modules' files past it` : "";
+    return `open      ${printable(p)} — ${moduleCountWords(m, printable)}${inner}`;
   });
 }
 
-// An advisory, not a violation, for each module whose one file is its entry: it hides nothing (ADR 0004), likely a
+// An advisory, not a violation, for each module whose one code file is its entry: it hides nothing (ADR 0004), likely a
 // feature folder.
 function shallowLines(records) {
-  return [...records].filter(([, m]) => m.shallow).map(([p]) => `shallow?  ${printable(p)} — its one file is its entry, none private`);
+  return [...records].filter(([, m]) => m.shallow).map(([p]) => `shallow?  ${printable(p)} — its one code file is its entry, none private`);
 }
 
 // The lines the reader's facts give: { unread, stale, disk, tests, ignored }. Unread: a module with no plain folder, the
@@ -379,55 +385,6 @@ function staleLine(sm, facts, onDisk) {
   return sm.loose.join("\n") !== facts.loose.join("\n") ? "stale     structure.json lists other files no module holds than the disk has: rerun the structure command" : null;
 }
 
-// Each module's record, for every module, uncapped (the page cuts its own fold; the stamp's open lines count what they
-// do not show): its files; the ones an edge from outside it and its nested modules reaches (outside every module
-// counts); and its entry skips as the edges' rulings count them. Where the stamp listed the module's files only those
-// count as reached or past its interface, so a graph cannot report more than the module holds; and `shallow`, whether
-// its one listed file, tests aside, is its entry and no module nests in it.
-function moduleRecords(sm, edges, isTest) {
-  const parents = new Set(sm.modules.map((m) => m.parent));
-  const shallow = (m) => {
-    const own = (m.files || []).filter((f) => !isTest(f));
-    return own.length === 1 && own[0] === m.entry && !parents.has(m.path);
-  };
-  const reached = new Map();
-  for (const e of sm.edges) {
-    if (e.fromModule && underPath(e.fromModule, e.toModule)) continue;
-    if (!reached.has(e.toModule)) reached.set(e.toModule, new Set());
-    reached.get(e.toModule).add(e.to);
-  }
-  const skips = entrySkips(edges), out = new Map();
-  for (const m of sm.modules) {
-    const sk = skips.get(m.path) || noSkips();
-    const listed = m.files && m.files.length ? new Set(m.files) : null;
-    const held = (s) => (listed ? [...s].filter((f) => listed.has(f)).length : s.size);
-    out.set(m.path, {
-      total: listed ? m.files.length : null, reached: held(reached.get(m.path) || new Set()),
-      pastInterface: held(sk.past), innerPast: [...sk.inner].sort(), exceptedPast: sk.excepted.size, testsPast: sk.tests.size,
-      shallow: shallow(m),
-    });
-  }
-  return out;
-}
-
-const noSkips = () => ({ past: new Set(), inner: new Set(), excepted: new Set(), tests: new Set() });
-
-// A module's entry-skipping edges as the check rules them, each counted at the outermost module it reaches past
-// the entry of: the files of its own a violation reaches past an entry, apart the files of its inner modules, the ones an
-// exception not yet due covers, and the ones a test reaches past the interface.
-function entrySkips(checked) {
-  const out = new Map();
-  const at = (p) => { if (!out.has(p)) out.set(p, noSkips()); return out.get(p); };
-  for (const e of checked.values()) {
-    if (e.rulings.has("test-past-interface")) at(e.skipped).tests.add(e.to);
-    if (!e.rulings.has("past-entry")) continue;
-    const sk = at(e.skipped);
-    if (e.rulings.has("excepted")) sk.excepted.add(e.to);
-    else (e.toModule === e.skipped ? sk.past : sk.inner).add(e.to);
-  }
-  return out;
-}
-
 // The strongly connected parts of a graph given as adjacency lists of indices (Tarjan's, iterative so a long chain
 // cannot overflow the stack): each part a list of indices.
 function components(adj) {
@@ -460,7 +417,8 @@ function components(adj) {
 }
 
 // The cycles among modules nested in one parent, and among top modules. An edge between two modules counts for the two
-// siblings under the deepest module holding both — a parent and its child are no pair; a test's edge is no dependency.
+// siblings under the deepest module holding both — a parent and its child are no pair; a test's edge, or one with an end
+// that is no code file, is no dependency.
 // Each strongly connected group of two or more modules is one cycle, found in one linear walk: its modules sorted, then
 // the two-way pairs inside it. { cycles: [{ parent (null among top modules), modules, moreModules, pairs, morePairs }]
 // (the first MAX_CYCLES groups, by parent and first module, each cut at MAX_CYCLE_MODULES and MAX_CYCLE_PAIRS), more }
@@ -477,7 +435,7 @@ function moduleCycles(sm, isTest) {
   };
   const groups = new Map(), pairs = new Set();
   for (const e of sm.edges) {
-    if (!e.fromModule || !e.toModule || e.fromModule === e.toModule || isTest(e.from)) continue;
+    if (!e.fromModule || !e.toModule || e.fromModule === e.toModule || isTest(e.from) || !isCodeEdge(e)) continue;
     const a = byPath.get(e.fromModule), b = byPath.get(e.toModule);
     if (!a || !b) continue;
     const ca = chainOf(a), cb = chainOf(b);

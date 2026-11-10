@@ -45,7 +45,7 @@ Call `brainstorm` on the idea. It writes `docs/roadkeeper/one-pager.md` and `doc
 2. Group the slices into milestones and order them by `${CLAUDE_PLUGIN_ROOT}/skills/steward/references/versions.md`.
 3. Open one issue per slice on its milestone (`road`, An issue's title, Summary and bet), labelled `enhancement` or `bug`, and `major`, `internal` or `polish` where that file's Numbers say.
 4. The walking skeleton is the thinnest end-to-end path, deployed to its launch shape, with the design wired in, the structure declared (`${CLAUDE_PLUGIN_ROOT}/skills/slice/references/structure.md`), Roadkeeper's tools set up (`${CLAUDE_PLUGIN_ROOT}/skills/slice/references/project-tools.md`) and the non-negotiables as symptom checks.
-5. Write `CODING_STANDARDS.md` at the root from `references/coding-standards.md`. Walk `${CLAUDE_PLUGIN_ROOT}/ROADKEEPER_STANDARDS.md` with the human, section by section: each default the human changes becomes a line under `## Departures`, with the human's reason. Call the Skill tool with `setup-pre-commit`.
+5. Write `CODING_STANDARDS.md` at the root from `references/coding-standards.md`. Walk `${CLAUDE_PLUGIN_ROOT}/ROADKEEPER_STANDARDS.md` with the human, section by section: each default the human changes becomes a line under `## Departures`, with the human's reason.
 6. With stored data, write the durability decision as an ADR.
 7. At Product level, write `docs/roadkeeper/threats.md` from `references/threat-model.md`.
 8. Bind each line of `docs/roadkeeper/assumptions.md` to the slice issue that tests it, or defer it with a reason.

@@ -81,7 +81,7 @@ Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/structure-check.mjs` in the project root
 - debt still covered by exceptions;
 - a `structure.json` older than the code.
 
-It exits 1 when a rule is broken or `structure.json` is stale. It reads the tracker snapshot, in a worktree with none its main checkout's; with none anywhere, a `note` line says version exceptions were not judged. A `shallow?` line, advisory, names a deep module whose one file is its entry: it hides nothing.
+It exits 1 when a rule is broken or `structure.json` is stale. It reads the tracker snapshot, in a worktree with none its main checkout's; with none anywhere, a `note` line says version exceptions were not judged. A `shallow?` line, advisory, names a deep module whose one code file is its entry: it hides nothing.
 
 The Road's Architecture tab opens on the check's unread, stale and level-name lines, and draws the graph under them.
 

@@ -4,7 +4,7 @@
 // it (commit-tree.mjs); today is the working tree in place. On each, the named test files it holds, or with none
 // named every file the commands file's `tests` pattern, else the adapter's, matches there, run by name after
 // `beforeTests` (test-run.mjs): the base first, then today. Prints "same outcomes" with the counts, or each case whose
-// outcomes differ with both (case-outcomes.mjs).
+// outcomes differ with both, an unknown one on either tree always (case-outcomes.mjs).
 //
 // Exits 0 when every case kept its outcome; 1 when one did not, or no file or case was found on either tree; 2 when the commands
 // file refuses or no tree could be built; 3 when a named file is a test file of neither tree.

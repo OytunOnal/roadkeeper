@@ -33,7 +33,7 @@ export function svState(root, V){
   // the page's body family, the drawing's own, and its mono family, the tip's
   var FB=getComputedStyle(root).fontFamily||'sans-serif', FM=getComputedStyle(document.getElementById('sv-tip')).fontFamily||'monospace';
   // each text role's font, as the style sheet sets it
-  var FONT={title:'500 13.5px '+FB, pkg:'italic 500 14px '+FB, stat:'11px '+FB, line:'12px '+FM, chip:'10.5px '+FM, part:'11px '+FM};
+  var FONT={title:'500 13.5px '+FB, pkg:'italic 500 14px '+FB, stat:'11px '+FB, line:'12px '+FM, chip:'10.5px '+FM, usage:'10.5px '+FM, part:'11px '+FM};
   function tw(s, role){ ctx.font=FONT[role]; return ctx.measureText(s).width; }
   var D=tabDrawing(V, tw);
   return { root:root, SRC:SRC, D:D, S:D.size, svg:byId('sv-svg'), world:byId('sv-world'), stage:byId('sv-stage'), side:byId('sv-side'), tipEl:byId('sv-tip'),
@@ -124,7 +124,7 @@ export function selectArrowAndShow(sv, e){ selectArrow(sv, e); showDetail(sv); }
 export function showDetail(sv){
   if (sv.D.scrollsToDetail(sv.stage.getBoundingClientRect(), sv.side.getBoundingClientRect())) try { sv.side.scrollIntoView({block:'nearest', behavior:'smooth'}); } catch(e) {} }
 export function clearSelection(sv){ setSelection(sv, null, null); selectionChanged(sv); }
-// drawBox: box `b` of the scene: its card, its header, its lines and gauge, its nested modules and its chips
+// drawBox: box `b` of the scene: its card, its header, its lines, its nested modules and its chips
 export function drawBox(sv, b){
   var P=b.P, at=b.at, x0=b.x0, g=svgEl('g',{'class':b.cls+(sv.selected===b.id?' sel':''),tabindex:'0',role:'button','aria-label':b.title,'data-n':b.id,transform:'translate('+P.x+','+P.y+')'});
   g.appendChild(svgEl('rect',{'class':'body',width:P.w,height:at.bodyH,rx:b.rx}));
@@ -132,13 +132,11 @@ export function drawBox(sv, b){
   at.strips.forEach(function(s){ g.appendChild(s.held ? svgEl('rect',{'class':s.cls,x:3,y:s.y,width:4,height:s.h,rx:2}) : svgEl('line',{'class':s.cls,x1:5,x2:5,y1:s.y,y2:s.y+s.h})); });
   var hy=b.headerY;
   g.appendChild(svgEl('text',{'class':'title',x:x0,y:hy.title}, b.title));
-  // its counts on a line of their own under its name, so a long name never runs into them
-  g.appendChild(svgEl('text',{'class':'lvtag',x:x0,y:hy.counts}, b.info));
+  // its usage on lines of their own under its name, so a long name never runs into them
+  b.usageLines.forEach(function(l){ g.appendChild(svgEl('text',{'class':'usage',x:x0,y:l.y}, l.t)); });
   g.appendChild(svgEl('line',{'class':'rule',x1:6,x2:P.w-6,y1:hy.rule,y2:hy.rule}));
   if (b.statRow) drawStatRow(sv, g, b);
   b.lines.forEach(function(l,i){ g.appendChild(svgEl('text',{'class':'ln '+l.cls,x:x0,y:b.head+6+12+i*sv.S.lineH}, l.t)); });
-  var ga=b.gaugeAt;
-  if (ga){ g.appendChild(svgEl('rect',{'class':'gauge-rest',x:ga.x,y:ga.y,width:ga.w,height:3})); g.appendChild(svgEl('rect',{'class':'gauge-ok',x:ga.x,y:ga.y,width:ga.okW,height:3})); g.appendChild(svgEl('rect',{'class':'gauge-past',x:ga.pastX,y:ga.y,width:ga.pastW,height:3})); }
   // its nested modules, each in its entry's band
   for (var pr in b.pf) b.pf[pr].chips.forEach(function(c){ g.appendChild(drawPart(sv, c, {x:x0+c.x, y:at.partY[pr]+c.line*(sv.S.partH+sv.S.partGap)})); });
   drawChipRow(sv, g, b);
@@ -169,7 +167,7 @@ export function drawChipRow(sv, g, b){
     var chipGroup=svgEl('g',{'class':'chip'+c.cls}); if (!b.spans) chipGroup.appendChild(svgEl('line',{'class':'stub'+c.cls,x1:c.x+c.w/2,x2:c.x+c.w/2,y1:b.h,y2:y})); chipGroup.appendChild(svgEl('rect',{x:c.x,y:y,width:c.w,height:S.chipH,rx:3})); chipGroup.appendChild(svgEl('text',{x:c.x+S.chipPad,y:y+13},c.t));
     tipOn(sv, chipGroup, function(){ return [c.tip]; }); g.appendChild(chipGroup);
   });
-  if (b.row.more){ var mk=svgEl('text',{'class':'lvtag',x:b.row.moreX,y:y+13},b.row.moreText);
+  if (b.row.more){ var mk=svgEl('text',{'class':'more-chips',x:b.row.moreX,y:y+13},b.row.moreText);
     tipOn(sv, mk, function(){ return b.row.moreTip; }); g.appendChild(mk); }
 }
 // listenBox: a box's hover, click, double-click and keys

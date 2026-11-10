@@ -1,14 +1,17 @@
 // @level infrastructure
 // Roadkeeper — a project's tests run by name in one tree: `beforeTests`' steps first (steps-run.mjs), then `runTests` over
-// the test files, as many to a run as the commands file's `filesPerRun`, the runs side by side, each run's cases read by the
-// adapter. `{files}`, an argument of its own, becomes the run's files, each its own argument; `{out}`, anywhere in an
-// argument, a results file in the caller's folder. A run no case is read from is said, with why and its last lines.
+// the test files, as many to a run as the commands file's `filesPerRun`, the runs side by side, each run's cases read by
+// the adapter, a crashed file's then made unknown (case-outcomes.mjs); a crashed run's other files each run again alone,
+// to find a crash the run did not write. `{files}`, an argument of its own, becomes the run's files, each its own
+// argument; `{out}`, anywhere in an argument, a results file in the caller's folder. A run no case is read from is
+// said, with why and its last lines.
 
 import { mkdirSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import { plural } from "../../_text.mjs";
 import { adapterOf } from "../adapters/adapters.mjs";
+import { crashedFiles, unknownMarked } from "./case-outcomes.mjs";
 import { commandEnv, runCommandForOutput } from "./command-run.mjs";
 import { COMMANDS_FILE, readCommands } from "./commands-file.mjs";
 import { stepsPass, tailLines } from "./steps-run.mjs";
@@ -55,12 +58,35 @@ async function inPool(tasks) {
   return results;
 }
 
-// One run of runTests over a group of files: a promise of { group, ran, cases }. `run`: { tree, commands, adapter,
-// env, group, out }.
+// One run of runTests over these files, its results file at `out`: a promise of { ran, cases }. `run`: { tree,
+// commands, adapter, env }.
+async function runCases(run, files, out) {
+  const { tree, commands, adapter, env } = run;
+  const ran = await runCommandForOutput(expanded(commands.runTests, files, out), tree, env);
+  return { ran, cases: adapter.cases({ root: tree, files, output: ran.tail, results: out }) };
+}
+
+// The crashed files of a run over the group, `crashOf` (crashedFiles'), with those found alone: when the run crashed,
+// each other file it read a case from runs again alone, and is crashed by its own crash when that run crashes, since
+// Vitest, given two crashing files, may write only one's crash. A promise of the map.
+async function crashesFoundAlone(run, cases, crashOf) {
+  const found = new Map(crashOf);
+  if (!crashOf.size) return found;
+  const others = run.group.filter((f) => !crashOf.has(f) && cases.some((c) => c.file === f));
+  for (const [k, file] of others.entries()) {
+    const alone = await runCases(run, [file], `${run.out}-alone-${k + 1}`);
+    const own = crashedFiles(alone.cases, [file]).get(file);
+    if (own !== undefined) found.set(file, own);
+  }
+  return found;
+}
+
+// One run of runTests over a group of files: a promise of { group, ran, cases }, each case of a crashed file unknown.
+// `run`: { tree, commands, adapter, env, group, out }.
 async function groupCases(run) {
-  const { tree, commands, adapter, env, group, out } = run;
-  const ran = await runCommandForOutput(expanded(commands.runTests, group, out), tree, env);
-  return { group, ran, cases: adapter.cases({ root: tree, files: group, output: ran.tail, results: out }) };
+  const { ran, cases } = await runCases(run, run.group, run.out);
+  const crashOf = await crashesFoundAlone(run, cases, crashedFiles(cases, run.group));
+  return { group: run.group, ran, cases: unknownMarked(cases, crashOf) };
 }
 
 // The lines saying a run read no case: how many files it ran, how it ended and its last lines.

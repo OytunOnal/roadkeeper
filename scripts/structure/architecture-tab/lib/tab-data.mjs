@@ -2,7 +2,8 @@
 // Roadkeeper — the Architecture tab's data: the view's data, from structureModel's output (structure-model.mjs) and the check's
 // rulings (rulings.mjs), which the page ships as JSON and the client's counting (tab-counts.mjs) folds into views. Pure.
 
-import { DECL_KINDS, EDGE_KINDS, edgeEnds, placed } from "../../lib/structure-model.mjs";
+import { codeFiles } from "../../lib/module-records.mjs";
+import { DECL_KINDS, EDGE_KINDS, edgeEnds, isCodeEdge, placed } from "../../lib/structure-model.mjs";
 
 // an edge's mark on the page: 0 inward, 1 outward, 2 outward but covered by a declared exception, 3 outward and its
 // exception due; drawsRed says which draw red. The page embeds it as JSON.
@@ -19,13 +20,14 @@ export const SIZE_STEPS = [
   { maxModules: 300, maxFiles: 0, maxRootFiles: 10, maxEdges: 1000, maxDecls: 0, maxRelations: 50 },
 ];
 
-// The view's data: modules with their gauge, levels, entry and root files, the files no module holds with their levels (`loose`), the
+// The view's data: modules with their count, levels, entry and root files (several marked as the check rules them,
+// rootFilesMark and rootFilesUntil), the files no module holds with their levels (`loose`), the
 // files of mixed levels with their levels and mark (`mixed`, [file, levels, mark, until]), file-level
 // edges with their mark, count, modules (null for a file no module holds), exception's review point (null when none) and
 // two files' levels, the declarations the cards show, the declared relations between
 // drawn modules, and the cycles. The edges come folded by the check, and every judgement is the check's (the rulings'
 // output): an edge's mark follows its rulings, a test file's edges are not drawn, a card counts the entry skips the
-// check rules. The ends of every line come resolved from the reader
+// check rules. The drawing is the code's (SOURCE): a module's other files and the edges reaching them are left out. The ends of every line come resolved from the reader
 // (fromModule, toModule, fromLevel, toLevel, fileLevels); nothing here or in the client walks a path to find its module
 // or level. A level travels as its index in the rings read innermost first, -1 for none.
 // `caps`: one size step's; a cap it leaves out takes the first step's.
@@ -53,14 +55,16 @@ export function tabData(sm, caps, check) {
   let outside = 0, notDrawn = 0;
   // an end in no module and none of the files no module holds leaves the code read
   const unread = (end) => !end.module && !end.loose;
-  for (const e of sm.edges) if (edgeEnds(e).some(unread)) outside++;
+  // the drawing is the code's: an edge with an end that is no code file, a stylesheet or a data file, is not drawn
+  // and is counted nowhere
+  for (const e of sm.edges) if (isCodeEdge(e) &&edgeEnds(e).some(unread)) outside++;
   // each end drawn: its module kept, or its file kept among the files no module holds
   const drawn = (end) => (end.module ? byPath.has(end.module) : drawnLoose.has(end.file));
   // the check's folded edges; one from outside the code read is counted above
   const folded = [];
   for (const r of check.edges.values()) {
     const [from, to] = edgeEnds(r);
-    if (unread(from)) continue;
+    if (!isCodeEdge(r) || unread(from)) continue;
     if (!drawn(from) || !drawn(to)) { notDrawn += r.n; continue; }
     if (r.rulings.has("test")) continue; // the drawing is the code's; tests reach it from outside
     folded.push({
@@ -76,7 +80,8 @@ export function tabData(sm, caps, check) {
   groups.forEach((g, i) => g.modules.forEach((p) => { if (!inCycle.has(p)) inCycle.set(p, []); inCycle.get(p).push(i); }));
   const modules = kept.map((m) => {
     const entry = m.entry, rec = check.modules.get(m.path);
-    const listed = m.files && m.files.length ? m.files : null, roots = m.rootFiles;
+    // its code files only, as the check's record counts them
+    const listed = codeFiles(m.files), roots = m.rootFiles;
     const shipFiles = listed ? listed.slice(0, c.maxFiles) : null, shipRoots = roots.slice(0, c.maxRootFiles);
     // the shipped files whose level is not the module's own: a root file's at another level, or a private file's
     const lf = [];
@@ -92,6 +97,7 @@ export function tabData(sm, caps, check) {
       ...rec,
       // its inner modules' files reached past it, cut as its own files are
       innerPast: rec.innerPast.slice(0, c.maxFiles), innerPastCut: Math.max(0, rec.innerPast.length - c.maxFiles),
+      ...readRootFilesException(check.rootFiles, m.path),
     };
   });
   // declarations of the files the page can show: exported first, then by kind and name
@@ -130,8 +136,16 @@ export function tabData(sm, caps, check) {
   };
 }
 
-// what breaks a rule, an outward edge or a file of mixed levels, marked by the exception covering it: outward with
-// none, excepted, or due
+// a module's several root files as the check rules them (rulings' rootFiles, by module): their mark and their
+// exception's review point (null when none); nothing for a module with one
+function readRootFilesException(rootFiles, path) {
+  if (!rootFiles.has(path)) return {};
+  const exception = rootFiles.get(path);
+  return { rootFilesMark: markFor(exception), rootFilesUntil: exception ? exception.until : null };
+}
+
+// what breaks a rule, an outward edge, a file of mixed levels or a module's several root files, marked by the exception
+// covering it: outward with none, excepted, or due
 function markFor(exception) {
   if (!exception) return MARK.outward;
   return exception.due ? MARK.due : MARK.excepted;

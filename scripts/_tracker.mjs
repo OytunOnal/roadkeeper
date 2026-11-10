@@ -16,6 +16,7 @@ import { insideRoot, readPlainFile, replaceFile, recordsDir } from "./_files.mjs
 import { findProgram, mainCheckout } from "./_git.mjs";
 import { WAITING_LABEL, inFlightWaitingOnYou } from "./_milestones.mjs";
 import { cutAt, isCalendarDate } from "./_text.mjs";
+import { FAILURE_KIND } from "./_tracker-failure-kinds.mjs";
 
 export const SNAPSHOT = "docs/roadkeeper/issues.json";
 const SNAPSHOT_CAP = 64 * 1024 * 1024; // bytes of a snapshot read back
@@ -33,7 +34,7 @@ const GH_OUTPUT = 256 * 1024 * 1024;   // bytes one `gh` call may print: 2000 is
 // hands readTracker an in-memory one instead.
 function gh(args, root, left) {
   const program = findProgram("gh");
-  if (!program) throw new Error("gh is not on the PATH");
+  if (!program) throw Object.assign(new Error("gh is not on the PATH"), { code: "ENOENT" });
   return execFileSync(program, args, {
     cwd: root, encoding: "utf8", timeout: left, maxBuffer: GH_OUTPUT,
     stdio: ["ignore", "pipe", "pipe"], windowsHide: true,
@@ -45,6 +46,27 @@ const ghError = (e) => {
   const said = String((e && (e.stderr || e.message)) || "gh failed").split("\n").map((l) => l.trim()).find(Boolean) || "gh failed";
   return cutAt(said, 200);
 };
+
+const GH_AUTH_EXIT = 4; // gh's exit when it holds no login
+// what gh says when it is refused its login, or holds none
+const SIGNED_OUT = /gh auth login|\bHTTP 401\b/;
+// what gh says when no answer came: a server's error answer, or a connection failed or timed out
+const NO_ANSWER = /\bHTTP 5\d\d\b|error connecting to|dial tcp|no such host|connection (?:refused|reset)|i\/o timeout|TLS handshake timeout|Client\.Timeout|deadline exceeded/i;
+// what gh says when GitHub limits its reads: HTTP 429, and a 403's "API rate limit exceeded" or "secondary rate limit",
+// as gh's client ("HTTP 403: ...") and `gh api` ("gh: ... (HTTP 403)") print them; GraphQL's "API rate limit already
+// exceeded"; gh's own "GitHub API rate limit exceeded" and "rate limited"
+const RATE_LIMITED = /\bHTTP 429\b|\brate limit(?:ed)?\b/i;
+
+// The kind of a failed read (FAILURE_KIND), from what `gh` threw: not signed in, gh missing (no program to run), rate
+// limited, no answer (a server's error answer, a failed connection, a timeout), or other.
+function classifyFailure(error) {
+  const thrown = error || {};
+  const said = `${thrown.stderr || ""}\n${thrown.message || ""}`;
+  if (thrown.status === GH_AUTH_EXIT || SIGNED_OUT.test(said)) return FAILURE_KIND.notSignedIn;
+  if (thrown.code === "ENOENT") return FAILURE_KIND.ghMissing;
+  if (RATE_LIMITED.test(said)) return FAILURE_KIND.rateLimited;
+  return thrown.code === "ETIMEDOUT" || NO_ANSWER.test(said) ? FAILURE_KIND.noAnswer : FAILURE_KIND.other;
+}
 
 const PER_PAGE = 100; // the most a REST list gives in one page
 const MAX_EVENTS = 1000; // events of an issue's timeline read, ten pages
@@ -81,7 +103,7 @@ function fetchTracker(root, until, run) {
   const fetched = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   const call = (args) => {
     const left = Math.min(GH_TIMEOUT, until - Date.now());
-    if (left <= 0) throw new Error("gh took too long");
+    if (left <= 0) throw Object.assign(new Error("gh took too long"), { code: "ETIMEDOUT" });
     return run(args, root, left);
   };
   const repo = JSON.parse(call(["repo", "view", "--json", "nameWithOwner,url"]));
@@ -194,19 +216,20 @@ function stampSeen(snap, previous) {
 
 // The tracker read live within `budget` milliseconds and written whole to the tree's own snapshot, unless a newer read
 // is on disk; offline, or when `gh` fails, the tree's snapshot (readTreeSnapshot). Never throws: { snap, live, error,
-// fromMainCheckout }, where error is `gh`'s own first line and fromMainCheckout says the snapshot read is the main
-// checkout's. `run(args, root, left)` makes one gh call and returns what it printed.
+// failure, fromMainCheckout }, where error is `gh`'s own first line, failure its kind (classifyFailure), both null with no
+// failure, and fromMainCheckout says the snapshot read is the main checkout's. `run(args, root, left)` makes one gh call
+// and returns what it printed.
 export function readTracker(root, offline, budget = 4 * GH_TIMEOUT, run = gh) {
-  let error = null;
+  let error = null, failure = null;
   if (!offline) {
     try {
       const snap = stampSeen(cleanSnapshot(fetchTracker(root, Date.now() + budget, run)), readTreeSnapshot(root).snap);
       const path = join(root, SNAPSHOT);
       if (insideRoot(root, path) && !newerReadOnDisk(root, snap)) replaceFile(path, JSON.stringify(snap, null, 1) + "\n");
-      return { snap, live: true, error: null, fromMainCheckout: false };
-    } catch (e) { error = ghError(e); }
+      return { snap, live: true, error: null, failure: null, fromMainCheckout: false };
+    } catch (e) { error = ghError(e); failure = classifyFailure(e); }
   }
-  return { ...readTreeSnapshot(root), live: false, error };
+  return { ...readTreeSnapshot(root), live: false, error, failure };
 }
 
 // a milestone's title while another takes its own: unique by its number, and opening on no version

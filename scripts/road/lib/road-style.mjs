@@ -79,6 +79,11 @@ export const ROAD_STYLE = `
   .slice .dot::before { content: ""; position: absolute; left: 50%; translate: -50% 0; top: 7px; width: 12px; height: 12px; border-radius: 50%; background: var(--done); box-shadow: 0 0 0 3px var(--ground); }
   .slice.now .dot::before { background: var(--warn); }
   .slice.cand .dot::before { background: var(--ground); border: 1.5px dashed var(--planned); }
+  /* a card keeps to its column: its body does not grow to its widest content, so a wide diagram scrolls in its own
+     box, and any word in it may wrap; a code block (pre code, below) and a table keep their whole words and scroll
+     sideways in their own box */
+  .slice .body { min-width: 0; overflow-wrap: anywhere; }
+  .slice .body table { overflow-wrap: normal; }
   .slice .body p { color: var(--muted); font-size: 14px; margin-top: 4px; }
   .slice .body p.clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
   button.more { font: 500 12px var(--mono); color: var(--accent); background: none; border: 1px solid var(--line); border-radius: 3px; padding: 2px 8px; margin-top: 4px; cursor: pointer; }
@@ -124,6 +129,11 @@ export const ROAD_STYLE = `
   .slice .beside > :first-child { margin-left: 0; }
   /* "real-use check #N" and "specced from #N": a state badge's box, unfilled, in lower case */
   .tag.ref { text-transform: none; }
+  /* what a card in flight waits on, on a line of its own under its heading: a chip at the line's start, wrapping
+     inside its frame, "waits on" in its capitals and the rest of its line as written */
+  .slice .waits-on { margin: 4px 0 2px; }
+  .waits-on .tag { display: inline-block; margin-left: 0; white-space: normal; }
+  .waits-on .as-written { text-transform: none; letter-spacing: 0; }
 
   .scroll { overflow-x: auto; position: relative; background:
     linear-gradient(90deg, var(--ground) 30%, transparent) left / 24px 100% no-repeat local,
@@ -148,7 +158,7 @@ export const ROAD_STYLE = `
   .tab > :first-child:not(h2) { margin-top: 24px; } /* the nav already rules the line: no second one under it */
   /* read by a screen reader, drawn nowhere and taking no room */
   .unseen { position: absolute; width: 1px; height: 1px; margin: 0; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-  .card { background: var(--paper); border: 1px solid var(--line); border-left: 3px solid var(--warn); padding: 14px 16px; margin-top: 12px; }
+  .card { background: var(--paper); border: 1px solid var(--line); padding: 14px 16px; margin-top: 12px; }
   .card h3 { margin-bottom: 6px; }
   .card p, .card ul { font-size: 14px; color: var(--muted); }
   .fold { border-top: 1px solid var(--line); padding: 8px 0; }
@@ -203,7 +213,9 @@ export const ROAD_STYLE = `
   .lead { color: var(--ink); margin-top: 12px; }
   .slice.shut .dot::before { background: var(--done); border-radius: 0; transform: rotate(45deg) scale(0.8); }
   .slice.shut h3 { color: var(--muted); }
-  .card.late { background: var(--warn-soft); }
+  /* only a late card wears the orange edge; its padding gives back the 2 px the edge takes, so every card's text starts
+     at the same x */
+  .card.late { background: var(--warn-soft); border-left: 3px solid var(--warn); padding-left: 14px; }
   .fold ul { padding-left: 18px; font-size: 14px; margin: 8px 0 0; }
   .fold li { margin-bottom: 4px; }
   .slice .full { display: none; margin-top: 6px; }

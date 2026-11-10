@@ -7,7 +7,8 @@
 // A test file is named by its path from that root; with none, every file the commands file's `tests` pattern matches.
 // Runs `beforeTests`, then `runTests`, from docs/roadkeeper/commands.json, on the commit's tree laid out in a throwaway
 // folder, then on the working tree; compares each case by name, read by the stack's adapter (scripts/project-tools/);
-// prints "same outcomes" with the counts, or each case whose outcomes differ with both.
+// prints "same outcomes" with the counts, or each case whose outcomes differ with both. A case of a crashed file
+// (UNKNOWN) on either tree always differs: nothing proves it the same.
 //
 // Exits 0 when every case kept its outcome, and on --help; 1 when one did not, or no file or case was found on either tree; 2
 // when the commands file refuses (none, no `runTests`, no `{files}` in it) or no tree could be built; 3 on a usage

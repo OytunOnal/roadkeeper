@@ -96,11 +96,14 @@ function milestonesOf(snap) {
 
 // The issues drawn: none folded, which is drawn nowhere, counted nowhere and never flagged. Each carries its
 // milestone's version (null with none), its board label, its tickets by number with how many are closed, and, in
-// flight, what it waits on: `waitsOnYou`, wearing waiting-on-you, else `waitsOn` (waitsOnOf), or null.
+// flight, what it waits on: `waitsOn` (waitsOnOf), or null; else `waitsOnYou`, wearing waiting-on-you.
 function placed(snap) {
   const versions = new Map(snap.milestones.map((m) => [m.number, drawnVersion(m.title)]));
   const known = new Map(snap.issues.map((i) => [i.number, i.url]));
-  const waits = (i) => ({ waitsOnYou: inFlightWaitingOnYou(i), waitsOn: inFlight(i) && !isWaiting(i) ? waitsOnOf(i, known) : null });
+  const waits = (i) => {
+    const waitsOn = inFlight(i) ? waitsOnOf(i, known) : null;
+    return { waitsOnYou: !waitsOn && inFlightWaitingOnYou(i), waitsOn };
+  };
   const kept = snap.issues.filter((i) => !isFold(i));
   const ticketsOf = new Map();
   for (const t of kept.filter(isTicket).sort(byNumber)) {
@@ -241,13 +244,14 @@ function realGreenOf(work, today) {
   return { date, days: daysBetween(date, today), issue: refOf(last), more };
 }
 
+// The counters; `waiting` counts today's waiting issues, none set aside.
 function countersOf(road, today) {
-  const { ms, work, waitingOpen, later } = road;
+  const { ms, work, todays, later } = road;
   const last = lastVersion(ms.closed);
   return {
     lastVersion: last ? { version: last.version, closed: dayOf(last.closedAt) || null, marker: last.marker } : null,
     realGreen: realGreenOf(work, today),
-    waiting: waitingOpen.length,
+    waiting: todays.length,
     candidates: later.length,
     filters: filtersOf(),
   };
@@ -264,24 +268,31 @@ function filtersOf() {
   };
 }
 
-// every open issue on an open milestone, then the work in flight with no milestone, then every candidate, that carries
-// a bet; `version` null for one with no milestone
-function betsOf({ ms, issuesOf, flyingNoMilestone, later }) {
-  const bets = [];
-  const row = (issue, version) => {
-    const bet = betOf(issue.body);
-    if (bet) bets.push({ issue, bet, version });
-  };
-  for (const m of ms.open) for (const i of issuesOf(m).filter(isOpen)) row(i, m.version);
-  for (const i of [...flyingNoMilestone, ...later]) row(i, null);
-  return bets;
+// The open issues the bets are drawn from, each with its version, null for one with no milestone: every open issue on
+// an open milestone, then the work in flight with no milestone, then every candidate.
+function gatherBetPool({ ms, issuesOf, flyingNoMilestone, later }) {
+  return [
+    ...ms.open.flatMap((m) => issuesOf(m).filter(isOpen).map((issue) => ({ issue, version: m.version }))),
+    ...[...flyingNoMilestone, ...later].map((issue) => ({ issue, version: null })),
+  ];
 }
+
+// The bets of the pool: `bets`, each issue of it that carries a bet, with its bet and version; `betPoolSize`, how
+// many issues the pool holds.
+const betsOf = (pool) => ({
+  bets: pool.flatMap(({ issue, version }) => {
+    const bet = betOf(issue.body);
+    return bet ? [{ issue, bet, version }] : [];
+  }),
+  betPoolSize: pool.length,
+});
 
 // The groups: Done, each closed milestone's issues drawn, then those with no milestone; Now, the open issues drawn in
 // flight on any milestone or none; Next, the current milestone's other issues drawn, closed first, then queued, and how
 // many of its issues are in Now; Ahead, each later milestone's the same, the first drawn open, then the candidates. A
 // ticket, a fold, an issue closed undone and an issue specced in a spec are in none; work in flight with no milestone
-// is counted in no milestone.
+// is counted in no milestone. Waiting: the open waiting-on-you issues, today's in `open` and those set aside in
+// `setAside`, each in the order they wait; today's alone are counted and late.
 export function roadModel(snap, today, sources) {
   const listed = milestonesOf(snap);
   const issues = placed(snap);
@@ -303,6 +314,9 @@ export function roadModel(snap, today, sources) {
   const later = drawnIssues.filter((i) => isCandidate(i) && queued(i)).sort(byNumber);
   const ahead = ms.open.slice(1).map((milestone, at) => ({ milestone, issues: drawnUnder(milestone), open: at === 0 }));
   const waitingOpen = waiting.filter(isOpen).sort(byWait).map((i) => ({ ...i, ...ageOf(i, today) }));
+  // set aside: a waiting issue that waits on something else first, named on its last line; never late
+  const setAside = waitingOpen.filter((i) => waitsOnLineOf(i.body)).map((i) => ({ ...i, late: false }));
+  const todays = waitingOpen.filter((i) => !waitsOnLineOf(i.body));
   return {
     tracker: { fetched: snap.fetched, repo: snap.repo, url: snap.url },
     milestones: ms,
@@ -311,11 +325,11 @@ export function roadModel(snap, today, sources) {
     now: { issues: alongRail(flying), inFlight: flying.length },
     next: { milestone: current, issues: current ? drawnUnder(current) : [], inFlight: current ? flying.filter((i) => i.milestone === current.number).length : 0 },
     ahead: { milestones: ahead, count: ahead.reduce((n, a) => n + a.issues.length, 0), later },
-    waiting: { open: waitingOpen, answered: waiting.filter((i) => i.state === "CLOSED").sort(byClosed).reverse().slice(0, ANSWERED), lateAfterDays: WAIT_DAYS },
+    waiting: { open: todays, setAside, answered: waiting.filter((i) => i.state === "CLOSED").sort(byClosed).reverse().slice(0, ANSWERED), lateAfterDays: WAIT_DAYS },
     untriaged: snap.issues.filter((i) => isOpen(i) && (i.labels.length === 0 || has(i, "needs-triage"))).sort(byNumber),
     flags: flagsOf(snap),
-    bets: betsOf({ ms, issuesOf, flyingNoMilestone: alongRail(flying.filter((i) => !i.milestone)), later }),
-    counters: countersOf({ ms, work, waitingOpen, later }, today),
+    ...betsOf(gatherBetPool({ ms, issuesOf, flyingNoMilestone: alongRail(flying.filter((i) => !i.milestone)), later })),
+    counters: countersOf({ ms, work, todays, later }, today),
     due: dueOf(sources.metrics, today),
   };
 }

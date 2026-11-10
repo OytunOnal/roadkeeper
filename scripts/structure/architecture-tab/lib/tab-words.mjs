@@ -6,6 +6,7 @@
 // call (architecture-tab.mjs, ORIGINALS).
 
 import { plural } from "../../../_text.mjs";
+import { moduleCountWords } from "../../lib/module-records.mjs";
 import { innerPastCount, mixedOf, rootFileCount, severalRootFiles } from "./tab-counts.mjs";
 import { drawsRed, MARK } from "./tab-data.mjs";
 
@@ -53,21 +54,23 @@ export function insideLine(s) {
   if (!s || !s.n) return [];
   return [{ t: dependencyWords(s.n) + ' inside', cls: '' }].concat(tallyWords(s));
 }
-// skipNotes: the entry skips a module's card and detail say apart from its gauge — into its inner modules' files,
-// covered by an exception not yet due, or a test's — its several root files, and shallow? when its one file is its
-// entry; each only when non-zero.
+// skipNotes: the entry skips a module's card and detail say after its count — into its inner modules' files, or a
+// test's — its several root files, and shallow? when its one code file is its entry; each only when non-zero.
 export function skipNotes(m) {
   var inner = innerPastCount(m), notes = [];
   if (inner) notes.push(plural(inner, 'inner module file') + ' past the interface');
-  if (m.exceptedPast) notes.push(m.exceptedPast + ' excepted');
   if (m.testsPast) notes.push(plural(m.testsPast, 'test') + ' past the interface');
   if (severalRootFiles(m)) notes.push(rootFileCount(m) + ' root files');
   if (m.shallow) notes.push('shallow?');
   return notes;
 }
-// skipNote: a card's skipNotes, each after a ' · '.
-export function skipNote(m) {
-  return skipNotes(m).map(function (t) { return ' · ' + t; }).join('');
+// listModuleNotes: a module's notes as its card, its detail and the modules table say them: its count first
+// (moduleCountWords), its inner module files past the interface joined to it after a ' · ' when code outside reaches
+// none of its own files, then its other skipNotes.
+export function listModuleNotes(m) {
+  var count = moduleCountWords(m), notes = skipNotes(m);
+  if (!m.reached && innerPastCount(m)) return [count + ' · ' + notes[0]].concat(notes.slice(1));
+  return [count].concat(notes);
 }
 // cycleLines: for each cycle a module is in, the group and its two-way pairs, each cut said.
 export function cycleLines(cy, cycles) {

@@ -128,6 +128,14 @@ _Avoid_: TODO, tech debt
 An issue only the human can act on.
 _Avoid_: action item, reminder
 
+**Set aside**:
+A waiting-on-you issue that waits on something else first, named on its last line; The Road counts it apart until that line goes.
+_Avoid_: blocked, deferred, on hold
+
+**Today's**:
+A waiting-on-you issue not set aside: the human can act on it now. The Road's badge, counter, late strip and orange count today's alone.
+_Avoid_: actionable
+
 **The Road**:
 The page drawn from the tracker (`docs/roadkeeper/road.html`), in three tabs: progress (the current milestone's share of slices done; done, by closed milestone; now, the work in flight; next, the current milestone; ahead, by milestone); waiting on you; architecture. A view, never a record.
 _Avoid_: dashboard, board; "The Road" for its progress tab
@@ -137,7 +145,7 @@ The line down The Road's progress tab that its groups (Done, Now, Next, Ahead) h
 _Avoid_: axis; timeline, which is an issue's events on the tracker
 
 **Summary**:
-An issue's first paragraph, under its title: why it matters and to whom, in plain words; The Road shows it on the issue's card.
+An issue's first paragraph, under its title (a spec's: the first paragraph under its Problem Statement): why it matters and to whom, in plain words; The Road shows it on the issue's card.
 _Avoid_: description, excerpt, first line
 
 **Size step**:
@@ -230,6 +238,10 @@ The line `path:line:col: CODE message` a linter prints for one finding, the colu
 **Case id**:
 A test case's handle, the first word of its name, saying what it checks: named in a command, a review or a threat's row, and kept when the rest of the name is reworded.
 _Avoid_: case number, test code
+
+**Unknown case**:
+A case of a test run that also reported a failure belonging to no file it ran, in a file that failure's text names, or in any file of the run when it names none of the files holding cases; or a case of a file whose own run, alone, reported such a failure: nothing proves its outcome, so it is neither red nor green.
+_Avoid_: crashed case, skipped
 
 **Ceiling**:
 Of a code file past the size limits: its lines and characters as recorded when the limits came. The file may not pass either, and leaves the record once under both limits.

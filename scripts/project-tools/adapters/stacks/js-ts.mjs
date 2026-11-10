@@ -7,7 +7,7 @@
 // (`--format json`) from its lint run's output.
 
 import { eslintNumbers } from "../../../_eslint-numbers.mjs";
-import { readResultsCases } from "./junit-results.mjs";
+import { caseFromTestcase, readResultsCases } from "./junit-results.mjs";
 import { isUnusedName } from "./lint-message.mjs";
 
 // A JUnit testcase as a case of the run that was given `files`.
@@ -15,7 +15,7 @@ function readCase(raw, files) {
   const file = raw.file || [raw.classname, raw.suites[0]].find((n) => files.has(n)) || "";
   const suites = raw.suites.filter((s, k) => !(k === 0 && s === file));
   const id = [...suites, raw.name].join(" > ");
-  return { file, id, name: id, outcome: raw.outcome, detail: raw.detail };
+  return caseFromTestcase(raw, file, id);
 }
 
 // The cases of a run given `files` in the tree at `root`, read from its JUnit file at `results`: none when it wrote none.

@@ -39,9 +39,9 @@ export function roadModel(root, snap, today) {
 }
 
 // The page of the project at `root`: { html }, or { refused }, the line to say when the page is over the cap even
-// past the last size step. `tracker` is the tracker's read, { snap, live, error }, with `snapshotPath`, the snapshot's
-// path the page names when there is none; `today` is YYYY-MM-DD; `linkBase` starts file links; `tokensPath` the token
-// file, the plugin's when not given.
+// past the last size step. `tracker` is the tracker's read, { snap, live, error, failure }, with `snapshotPath`, the
+// snapshot's path the page names when there is none; `today` is YYYY-MM-DD; `linkBase` starts file links; `tokensPath`
+// the token file, the plugin's when not given.
 export function roadPage(root, tracker, { today, linkBase, tokensPath = PLUGIN_TOKENS }) {
   const snap = tracker.snap;
   const sources = pageSources(root);
@@ -49,7 +49,7 @@ export function roadPage(root, tracker, { today, linkBase, tokensPath = PLUGIN_T
   const structure = report(root, { snapshot: snap, today });
   const html = drawBySizeStep({
     road: snap ? modelOf(snap, today, sources) : null,
-    read: { live: tracker.live, error: tracker.error, snapshotPath: tracker.snapshotPath },
+    read: { live: tracker.live, error: tracker.error, failure: tracker.failure, snapshotPath: tracker.snapshotPath },
     architecture: sources.architecture,
     onePager: sources.onePager,
     tokens: pageTokens(tokensPath),

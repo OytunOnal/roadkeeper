@@ -8,7 +8,7 @@
 // words' (tab-words.mjs).
 
 import { countInWords } from "../../../_text.mjs";
-import { declLine, foldLines, insideLine, markClass, moduleCardLines, moreChipText, moreChipWords, skipNote } from "./tab-words.mjs";
+import { declLine, foldLines, insideLine, listModuleNotes, markClass, moduleCardLines, moreChipText, moreChipWords } from "./tab-words.mjs";
 
 // spanOf: the bands a set of levels holds (occ), and the first and last of them; a box spans every band between, the
 // ones it only crosses included. No level holds the band past the rings.
@@ -107,25 +107,24 @@ export function flowChips(items, width, o) {
   });
   return { chips: out, lines: items.length ? line + 1 : 0 };
 }
-// boxContent: what a box shows — a module's interface, its files reached from outside, gauge and skips; a file's
+// boxContent: what a box shows — a module's interface, its files and the way in, and skips; a file's
 // declarations, a file no module holds its exported ones, and what uses it and what it depends on — at most pg.look.size.lines lines, the rest counted; its header, its
-// cycles and its bands; red, or orange for a file of mixed levels an exception covers.
+// cycles and its bands; red, or orange for a file of mixed levels or a module's several root files an exception covers.
 export function boxContent(x, pg) {
-  var id = x.id, n = pg.N[id], m = pg.mods[id], max = pg.look.size.lines, lines, info, gauge = null;
+  var id = x.id, n = pg.N[id], m = pg.mods[id], max = pg.look.size.lines, lines, usage;
   function lineOf(d) { return declLine(d, pg.declKinds); }
   if (n.kind === 'mod') {
     lines = moduleCardLines(m.entry, pg);
-    info = (m.total != null ? countInWords(m.reached, 'none') + ' of ' + m.total + ' reached' : 'files not listed') + skipNote(m);
-    if (m.total) gauge = { ok: (m.reached - m.pastInterface) / m.total, past: m.pastInterface / m.total };
+    usage = listModuleNotes(m).join(' · ');
   } else {
     var alone = n.parent == null, all = (pg.decl[id] || []).filter(function (d) { return !alone || d[2]; }), shown = all.slice(0, max).map(lineOf), nd = pg.node(id);
     var cut = alone ? pg.declExCut[id] : pg.declCut[id];
-    lines = foldLines(shown, all.length - shown.length + (cut || 0), max); info = 'used by ' + countInWords(nd.edgesIn, 'none') + ' · depends on ' + countInWords(nd.edgesOut, 'none');
+    lines = foldLines(shown, all.length - shown.length + (cut || 0), max); usage = 'used by ' + countInWords(nd.edgesIn, 'none') + ' · depends on ' + countInWords(nd.edgesOut, 'none');
   }
   var sp = spanOf(n.lv, pg.rows, pg.none);
   return {
-    id: id, kind: n.kind, pkg: n.kind !== 'file', title: n.label, info: info, lines: lines, gauge: gauge, chips: x.chips, stat: insideLine(x.inside),
-    cy: m && m.cy.length ? m.cy : null, top: sp.top, bot: sp.bot, occ: sp.occ, sub: x.sub, bad: x.red, exc: !x.red && x.mixed === 2,
+    id: id, kind: n.kind, pkg: n.kind !== 'file', title: n.label, usage: usage, lines: lines, chips: x.chips, stat: insideLine(x.inside),
+    cy: m && m.cy.length ? m.cy : null, top: sp.top, bot: sp.bot, occ: sp.occ, sub: x.sub, bad: x.red, exc: x.orange,
   };
 }
 // partsOf: a module box's nested modules, measured, each one part chip in its entry's band, as a module seen from
@@ -141,27 +140,37 @@ export function partsOf(b, pg, measure) {
   });
   return { byRow: byRow, any: any };
 }
+// packUsageLines: a box's `usage`, the line under its name, as the lines it draws: split at its " · " and packed
+// greedily, each line no wider than `room` as `textW` measures it; a part wider than the room alone on its line.
+export function packUsageLines(usage, room, textW) {
+  var lines = [];
+  usage.split(' · ').forEach(function (part) {
+    var last = lines.length - 1, joined = last < 0 ? part : lines[last] + ' · ' + part;
+    if (last >= 0 && textW(joined) <= room) lines[last] = joined; else lines.push(part);
+  });
+  return lines;
+}
 // boxSize: a box's size from what it shows (boxContent), `measure(text, role)` measuring its text: its width, header and
-// body, its part chips flowed in each band, where its header's lines (headerY), text, cycle tag, gauge and chips go, and
-// its class.
+// body, its part chips flowed in each band, where its header's lines (headerY) and its usage's lines (usageLines) go,
+// its text, cycle tag and chips, and its class. Its usage wraps within the widest box's text room, and the box
+// is as wide as its widest usage line.
 export function boxSize(c, pg, measure) {
   var S = pg.look.size, parts = partsOf(c, pg, measure), b = Object.create(null);
   for (var k in c) b[k] = c[k];
+  function usageW(t) { return measure(t, 'usage'); }
   var sw = c.stat.reduce(function (s, p) { return s + measure(p.t, 'stat'); }, 0), cw = measure('cycle', 'stat');
   var lineW = Math.max.apply(null, c.lines.map(function (l) { return measure(l.t, 'line') + 24; }).concat([0]));
-  b.w = Math.min(320, Math.max(measure(c.title, c.pkg ? 'pkg' : 'title') + 24, measure(c.info, 'chip') + 24, 170, sw + (c.cy ? cw + 26 : 0) + 24, parts.any ? 220 : 0, lineW));
+  var usage = packUsageLines(c.usage, 320 - 24, usageW), usageBoxW = Math.max.apply(null, usage.map(function (t) { return usageW(t) + 24; }));
+  b.w = Math.min(320, Math.max(measure(c.title, c.pkg ? 'pkg' : 'title') + 24, usageBoxW, 170, sw + (c.cy ? cw + 26 : 0) + 24, parts.any ? 220 : 0, lineW));
   b.spans = c.bot > c.top; b.x0 = b.spans ? 14 : 12; b.rx = c.pkg ? 8 : 4;
   b.cls = 'card' + (c.pkg ? ' pkg' : '') + (b.spans ? ' span' : '') + (c.bad ? ' bad' : '') + (c.exc ? ' exc' : '');
   b.statRow = c.stat.length > 0 || !!c.cy;
-  // the header's lines, each by its y: the name's baseline, the counts' under it, the rule, the header line's under that
-  var hy = { title: 23, counts: 39, rule: 46 }; hy.stat = hy.rule + 14; b.headerY = hy;
-  b.head = b.statRow ? hy.stat + 4 : hy.rule; b.body = b.head + 6 + c.lines.length * S.lineH + 10 + (c.gauge ? 6 : 0);
+  // the header's lines, each by its y: the name's baseline, the usage's first under it, the rule under its last, the
+  // header line's under that
+  var hy = { title: 23, usage: 39, rule: 46 + (usage.length - 1) * S.usageH }; hy.stat = hy.rule + 14; b.headerY = hy;
+  b.usageLines = usage.map(function (t, i) { return { t: t, y: hy.usage + i * S.usageH }; });
+  b.head = b.statRow ? hy.stat + 4 : hy.rule; b.body = b.head + 6 + c.lines.length * S.lineH + 10;
   b.cyc = c.cy ? { x: b.x0 + sw + (sw ? 8 : 0), y: hy.stat - 11, w: cw + 12 } : null;
-  b.gaugeAt = null;
-  if (c.gauge) {
-    var gw = b.w - 16 - (b.spans ? 6 : 0), gx = 8 + (b.spans ? 6 : 0);
-    b.gaugeAt = { x: gx, y: b.body - 8, w: gw, okW: Math.max(0, gw * c.gauge.ok), pastX: gx + gw * c.gauge.ok, pastW: Math.max(0, gw * c.gauge.past) };
-  }
   b.pf = Object.create(null);
   var partFlow = { gap: S.partGap, pad: S.partPad, textW: function (t) { return measure(t, 'part'); } };
   for (var r in parts.byRow) b.pf[r] = flowChips(parts.byRow[r], b.w - 20, partFlow);
