@@ -13,7 +13,7 @@
 import { functionSources } from "../../_function-sources.mjs";
 import { countInWords, esc, plural } from "../../_text.mjs";
 import { moduleCountWords } from "../lib/module-records.mjs";
-import { reviewPointKind, reviewPointOrder } from "../lib/structure-model.mjs";
+import { reviewPointKind, reviewPointOrder } from "../lib/review-points.mjs";
 import * as tabCountsPart from "./lib/tab-counts.mjs";
 import { drawsRed, MARK, outwardFirst, SIZE_STEPS, tabData } from "./lib/tab-data.mjs";
 import * as tabDomPart from "./lib/tab-dom.mjs";
@@ -142,7 +142,7 @@ function structureHtml(view, unread, sources, src = "") {
 export function architectureTab(report, { sizeStep, linkBase, cap, sizeSteps = SIZE_STEPS }) {
   const src = (f) => `<a href="${esc(linkBase + f)}">${esc(f)}</a>`;
   const [rules, graph] = ["docs/roadkeeper/dependency-rules.md", "docs/roadkeeper/structure.json"].map(src);
-  const lines = report.check.atop;
+  const lines = report.atop;
   const atop = lines.length ? `<p class="unread report">${lines.map(esc).join("<br>")}</p>` : "";
   if (sizeStep >= sizeSteps.length) {
     const unread = report.unread.length ? `; ${report.unread.length} of its files could not be read` : "";

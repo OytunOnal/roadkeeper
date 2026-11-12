@@ -11,7 +11,7 @@
 
 import { readFileSync, statSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
-import { SOURCE_MAX_NESTING, nestingStop } from "../../lib/source-bounds.mjs";
+import { SOURCE_MAX_NESTING, nestingStop } from "./source-bounds.mjs";
 import { declarationsIn, posix } from "./typescript-parser.mjs";
 
 // an import named by its path from the importing file, looked up beside it on disk

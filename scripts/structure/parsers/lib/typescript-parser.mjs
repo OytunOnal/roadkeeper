@@ -9,8 +9,8 @@
 
 import { readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { SOURCE_MAX_NESTING, nestingStop } from "../../lib/source-bounds.mjs";
-import { readerMessage } from "../../lib/structure-model.mjs";
+import { readerMessage } from "../../lib/printable.mjs";
+import { SOURCE_MAX_NESTING, nestingStop } from "./source-bounds.mjs";
 
 // a compiler's message is cut here: a stop stays one readable line
 const WORDS = 600;

@@ -25,7 +25,7 @@ A slice that fits a single ticket, with no new screen, skips steps 1–6: commit
 2. **Structure.** In a structured project, add a `## Structure` section to the spec issue (`references/structure.md`, Planning a slice).
 3. **Mock.** A slice with a new screen brings a mock inside `tokens.css`, placed on the site map with its exits. Call `product-critique` on it; each finding is applied, or brought to step 4's approval.
 4. **Approve.** The human approves the spec, with its structure drawing in a structured project, and the mock.
-5. **Tickets.** The human runs `/to-tickets`. Each ticket carries, under "Decisions from #N this ticket carries", every spec decision it rests on.
+5. **Tickets.** The human runs `/to-tickets`. Each ticket carries, under "Decisions from #N this ticket carries", every spec decision it rests on. A ticket whose files another ticket's tests read, by `reader-tests` (`references/briefing.md`), is blocked by that ticket.
 6. **Build.** Commit The Road's drawn page (`road`, The page). The human runs `/implement-spec`: integration branch, tickets, PR. Its own code review is the one step 7 runs, not a second one; its fixes are step 8's. An implementer's report naming a choice its brief did not settle goes to the human in one line before its merger starts, so they rule on it before a review finds it and a fix round redoes it. A structured project with no structure command yet sets it up in this build (`references/structure-command.md`).
 7. **Review.** On the PR's branch, start together:
    - call the Skill tool with `code-review`, the branch against the default branch; its Standards brief lists `${CLAUDE_PLUGIN_ROOT}/ROADKEEPER_STANDARDS.md` among the standards sources, since `code-review` searches only the project's repository;

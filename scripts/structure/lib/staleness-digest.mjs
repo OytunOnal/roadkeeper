@@ -5,8 +5,10 @@
 // A file belongs to the deepest module above it; outside every module only a source file (SOURCE) that no `## Tests`
 // pattern names is read. What `## Ignore` names is taken out and counted.
 
-import { SOURCE, globMatch, pathAndParents, structurePath } from "./structure-model.mjs";
-import { rulings, testOf } from "./rulings.mjs";
+import { SOURCE, globMatch, pathAndParents } from "./source-paths.mjs";
+import { structurePath } from "./structure-model.mjs";
+import { testOf } from "./rulings.mjs";
+import { diskLines } from "./report-lines.mjs";
 
 // What a digest of these modules reads: { walked, the folders to walk, outer modules first so a nested one already read
 // is passed over; reads(rel), whether a file met is read: a module's, or under the `loose` option a source file no
@@ -43,7 +45,7 @@ export function rootFilesOffWalk(sm, d) {
 }
 
 // The disk's facts about the model's modules, from a digest `d` of them, a plain object the structure report reads
-// (the rulings' `facts`):
+// (the `facts` the disk's lines take, report-lines.mjs's diskLines):
 // - files: each module's files on disk, by its path, sorted; empty past a bound;
 // - loose: the source files on disk no module holds and no test pattern names, sorted; empty past a bound;
 // - digest, over: the digest, or null and the bound passed;
@@ -62,7 +64,7 @@ export function factsOf(sm, d) {
 // { files: the count stamped } or { refused: the structure report's disk-unread lines }, and then the data is
 // untouched. A stale or hard line never refuses: the stamp fixes staleness, the check judges the rules.
 export function stampData(data, sm, facts) {
-  const { diskUnread } = rulings(sm, facts);
+  const diskUnread = diskLines(sm, facts).disk;
   if (diskUnread.length) return { refused: diskUnread };
   for (const mod of data.modules) {
     const p = mod ? structurePath(mod.path).path : null;

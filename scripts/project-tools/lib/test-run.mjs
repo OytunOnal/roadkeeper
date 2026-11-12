@@ -4,28 +4,42 @@
 // the adapter, a crashed file's then made unknown (case-outcomes.mjs); a crashed run's other files each run again alone,
 // to find a crash the run did not write. `{files}`, an argument of its own, becomes the run's files, each its own
 // argument; `{out}`, anywhere in an argument, a results file in the caller's folder. A run no case is read from is
-// said, with why and its last lines.
+// said, with why and its last lines. The green's `{tests}` step runs every test file of the worktree so, in place, and
+// says only the failed cases and a total line; the green's doc tests run the same way, alone.
 
-import { mkdirSync } from "node:fs";
-import { availableParallelism } from "node:os";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
 import { plural } from "../../_text.mjs";
 import { adapterOf } from "../adapters/adapters.mjs";
-import { crashedFiles, unknownMarked } from "./case-outcomes.mjs";
+import { crashedFiles, listedByFile, unknownMarked } from "./case-outcomes.mjs";
 import { commandEnv, runCommandForOutput } from "./command-run.mjs";
 import { COMMANDS_FILE, readCommands } from "./commands-file.mjs";
+import { workingFile, workingFiles } from "./commit-tree.mjs";
 import { stepsPass, tailLines } from "./steps-run.mjs";
 import { worktreeInstall, worktreeRoot } from "./worktree.mjs";
 
 const FILES = "{files}"; // runTests' argument the test files take the place of
 const OUT = "{out}";     // runTests' text a results file's path takes the place of
 const WORKERS = availableParallelism(); // runs side by side: one per processor
+const TESTS_LABEL = "tests"; // the green's `{tests}` step's lines start with it
+const NOT_FAILED = new Set(["PASS", "SKIP"]); // the outcomes the `{tests}` step does not list: a skipped case is no failure
+
+// The test files' patterns of a project's `commands` (the commands file's, read): its `tests`, else its stack adapter's.
+const testPatterns =(commands) => (commands.tests ? [commands.tests] : adapterOf(commands.stack).tests);
+
+// Whether a path, from the root, is one of a project's test files: `testFileMatcher(commands, matches)(path)`, `matches`
+// reading it against each of its test files' patterns (testPatterns).
+export function testFileMatcher(commands, matches) {
+  const patterns = testPatterns(commands);
+  return (path) => patterns.some((pattern) => matches(pattern, path));
+}
 
 // The project's tests at the worktree holding `dir`, ready to run by name, its install linked in when it is a linked
 // worktree with none (worktree.mjs): { root, installFrom, said, commands, adapter, patternsLine, isTest }, `installFrom`
 // the checkout whose install a tree laid out for it links (null: none), `said` the line saying why none is linked or
-// null, `patternsLine` the test files' patterns as a line says them, the commands file's one else the adapter's, `isTest(path)`
-// whether `matches` reads the path as matching one of them; or { refused }, the line saying why not.
+// null, `patternsLine` the test files' patterns (testPatterns) as a line says them, `isTest(path)` whether `matches`
+// reads the path as matching one of them; or { refused }, the line saying why not.
 export function testSetup({ dir, matches }) {
   const root = worktreeRoot(dir);
   if (!root) return { refused: "not in a git repository" };
@@ -35,9 +49,8 @@ export function testSetup({ dir, matches }) {
   if (!commands.runTests.includes(FILES)) return { refused: `${COMMANDS_FILE}'s \`runTests\` has no ${FILES} argument` };
   const adapter = adapterOf(commands.stack);
   const { from, said } = worktreeInstall(root, commands.install);
-  const patterns = commands.tests ? [commands.tests] : adapter.tests;
-  const isTest = (path) => patterns.some((pattern) => matches(pattern, path));
-  return { root, installFrom: from, said: said ?? null, commands, adapter, patternsLine: patterns.join(" or "), isTest };
+  const [patternsLine, isTest] = [testPatterns(commands).join(" or "), testFileMatcher(commands, matches)];
+  return { root, installFrom: from, said: said ?? null, commands, adapter, patternsLine, isTest };
 }
 
 const expanded = (argv, files, out) => argv.flatMap((a) => (a === FILES ? files : [a.replaceAll(OUT, out)]));
@@ -93,18 +106,53 @@ async function groupCases(run) {
 const emptyRunLines = ({ group, ran }, label) => [
   `${label}: no case read from the run of ${plural(group.length, "test file")}: ${ran.why || "exit 0"}`, ...tailLines(ran.tail)];
 
-// The cases of the test files run in a tree, in the files' order: a promise of them, each line said handed to `say`,
-// a line of its own starting with `label`. `run`: { tree, commands, adapter, files, results, label }, `results` a
-// folder for the results files.
-export async function treeCases(run, say) {
+// The runs of the test files in a tree, each { group, ran, cases }: a promise of them, a run that read no case said.
+// `run` and `say` as treeCases' are.
+async function treeRuns(run, say) {
   const { tree, commands, adapter, files, results, label } = run;
   const before = commands.beforeTests ?? [];
-  if (before.length) await stepsPass(tree, before, (l) => say(l.startsWith(" ") ? l : `${label}: beforeTests: ${l}`));
+  if (before.length) await stepsPass({ root: tree, steps: before }, (l) => say(l.startsWith(" ") ? l : `${label}: beforeTests: ${l}`));
   mkdirSync(results, { recursive: true });
   const env = commandEnv(tree);
   const tasks = groups(files, commands.filesPerRun).map((group, k) => () => groupCases(
     { tree, commands, adapter, env, group, out: join(results, `results-${k + 1}`) }));
   const read = await inPool(tasks);
   for (const r of read) if (!r.cases.length) for (const line of emptyRunLines(r, label)) say(line);
-  return read.flatMap((r) => r.cases);
+  return read;
+}
+
+// The cases of the test files run in a tree, in the files' order: a promise of them, each line said handed to `say`,
+// a line of its own starting with `label`. `run`: { tree, commands, adapter, files, results, label }, `results` a
+// folder for the results files.
+export const treeCases = async (run, say) => (await treeRuns(run, say)).flatMap((r) => r.cases);
+
+// The test files of the worktree `setup` holds (testSetup's) that its patterns match, each a plain file inside the root
+// with no link on the way: a file reached through a linked folder is not among them.
+export const worktreeTests = ({ root, isTest }) =>
+  workingFiles(root).filter(isTest).map((f) => workingFile(root, f)).filter(Boolean);
+
+// The total line of the green's `{tests}` step.
+const totalLine = ({ cases, files, passes, started }) =>
+  `${TESTS_LABEL}: ${plural(cases.length, "case")} in ${plural(files.length, "file")}, all pass: ${passes ? "True" : "False"} ` +
+  `(${((Date.now() - started) / 1000).toFixed(1)} s)`;
+
+// The green's `{tests}` step in the worktree `setup` holds (testSetup's): `files`, by their paths from its root, else
+// every test file of it (worktreeTests), run by name in place, its results in a throwaway folder of the OS temp folder,
+// removed after. Says each failed or unknown case with its detail under its file, then the total line; a run that read
+// no case is said. A promise of whether every case passed or was skipped, every run reading one.
+export async function testsStepPasses(setup, say, files = worktreeTests(setup)) {
+  const started = Date.now();
+  if (!files.length) say(`${TESTS_LABEL}: no file matches ${setup.patternsLine}`);
+  const results = mkdtempSync(join(tmpdir(), "roadkeeper-green-tests-"));
+  try {
+    const runs = await treeRuns({ ...setup, tree: setup.root, files, results, label: TESTS_LABEL }, say);
+    const cases = runs.flatMap((r) => r.cases);
+    const failed = cases.filter((c) => !NOT_FAILED.has(c.outcome));
+    for (const line of listedByFile(failed)) say(line);
+    const passes = cases.length > 0 && !failed.length && runs.every((r) => r.cases.length);
+    say(totalLine({ cases, files, passes, started }));
+    return passes;
+  } finally {
+    rmSync(results, { recursive: true, force: true });
+  }
 }

@@ -6,7 +6,7 @@
 // The page embeds each function here by its own source, in one scope with the other parts' and the originals they
 // call (architecture-tab.mjs, ORIGINALS).
 
-import { reviewPointKind, reviewPointOrder } from "../../lib/structure-model.mjs";
+import { reviewPointKind, reviewPointOrder } from "../../lib/review-points.mjs";
 import { drawsRed, MARK, outwardFirst } from "./tab-data.mjs";
 
 // earliestReviewPoints: the points held so far ({ day, version }, or null for none) with `p` added: the earliest of each

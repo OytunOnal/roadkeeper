@@ -1,12 +1,12 @@
 // @level infrastructure
-// Roadkeeper — a commit's files laid out in a throwaway folder of the OS temp folder, for the tools that run tests on an older
-// commit. Git reads the commit into a temporary index in that folder and checks it out from there, so nothing is written
-// under the repository's .git. A working tree's test file is named by its path from the worktree's root, and read only
-// when a plain file inside it with no link on the way. The laid-out tree is made a repository of its own, its files in
-// its index, so a test reading git's list of files finds them as in a checkout. Each sibling today's package.json
-// names (siblings.mjs) is linked beside the tree where it lies beside the main checkout, the tree laid at the main
-// checkout's place as deep as they need. A link the tools make is removed before the folder is, and a folder still
-// holding one is left whole, and said.
+// Roadkeeper — a commit's files laid out in a throwaway folder of the OS temp folder, for the tools that run tests on
+// an older commit. Git reads the commit into a temporary index in that folder and checks it out from there, so
+// nothing is written under the repository's .git. A working tree's test file is named by its path from the worktree's
+// root, and read only when a plain file inside it with no link on the way; its files, every one or the uncommitted
+// ones, are git's lists. The laid-out tree is made a repository of its own, its files in its index, so a test reading
+// git's list of files finds them as in a checkout. Each sibling today's package.json names (siblings.mjs) is linked
+// beside the tree where it lies beside the main checkout, the tree laid at the main checkout's place as deep as they
+// need. A link the tools make is removed before the folder is, and a folder still holding one is left whole, and said.
 
 import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -45,18 +45,37 @@ export const commitFiles = (root, hash) => entries(git(["ls-tree", "-r", "-z", "
 export const workingFiles = (root) => entries(git(["ls-files", "-z", "-c", "-o", "--exclude-standard"], root))
   .filter((f) => lexists(join(root, f)));
 
+// whether the worktree at `root` has a commit yet: HEAD names one
+const hasHead = (root) => { try { git(["rev-parse", "--verify", "-q", "HEAD"], root); return true; } catch { return false; } };
+
+// The uncommitted files of the working tree at `root`, by their paths from it: changed against HEAD, staged or not, a
+// deleted one included, then the untracked files git does not ignore; with no commit yet (hasHead), every file in the
+// index first. Throws when git fails.
+export function uncommittedFiles(root) {
+  const changed = entries(hasHead(root) ? git(["diff", "--name-only", "--no-renames", "-z", "HEAD", "--"], root)
+    : git(["ls-files", "-z", "-c"], root));
+  return [...new Set([...changed, ...entries(git(["ls-files", "-z", "-o", "--exclude-standard"], root))])];
+}
+
 // A file's name as given, with forward slashes and no leading "./".
 export const fileName = (name) => name.replace(/\\/g, "/").replace(/^(\.\/)+/, "");
+
+// The path `name` gives from the root `root`, `/`-separated, when it leads inside the root and is not the root itself;
+// else null. Reads nothing on disk.
+export function pathFromRoot(root, name) {
+  const rest = relative(root, resolve(root, fileName(name)));
+  const outside = !rest || rest === ".." || rest.startsWith(".." + sep) || isAbsolute(rest);
+  return outside ? null : rest.split(sep).join("/");
+}
 
 // The test file `name` names in the working tree at `root`, by its path from the root, when it is a plain file inside
 // the root with no link on the way; else null.
 export function workingFile(root, name) {
-  const path = resolve(root, fileName(name));
-  const rest = relative(root, path);
-  const outside = !rest || rest === ".." || rest.startsWith(".." + sep) || isAbsolute(rest);
-  if (outside) return null;
+  const rest = pathFromRoot(root, name);
+  if (!rest) return null;
+  const path = resolve(root, rest);
   const folderPlain = dirname(path) === root || isPlainDir(root, dirname(path));
-  try { return folderPlain && lstatSync(path).isFile() ? rest.split(sep).join("/") : null; } catch { return null; }
+  try { return folderPlain && lstatSync(path).isFile() ? rest : null; } catch { return null; }
 }
 
 // A throwaway folder for one run of a tool: { folder, around, tree, results, index }. With siblings, the tree lies in

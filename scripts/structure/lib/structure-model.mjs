@@ -2,7 +2,8 @@
 // Roadkeeper — the declared structure: docs/roadkeeper/dependency-rules.md and structure.json read into one model, and the
 // dependency rule judged on it.
 
-import { DATE, controlsReplaced, isCalendarDate, readerLines, versionOf } from "../../_text.mjs";
+import { DATE, isCalendarDate, readerLines } from "../../_text.mjs";
+import { MAX_DEPTH, pathAndParents } from "./source-paths.mjs";
 
 // The declared structure, read into one model: docs/roadkeeper/dependency-rules.md, in the shape of its template in
 // skills/slice/references/structure.md, and docs/roadkeeper/structure.json, the stack tool's output. Its fields:
@@ -21,11 +22,6 @@ import { DATE, controlsReplaced, isCalendarDate, readerLines, versionOf } from "
 
 // the four kinds of edge a tool can see
 export const EDGE_KINDS = ["dependency", "type-only", "implements", "inheritance"];
-// the files read as code: JavaScript and TypeScript, as dependency-cruiser and the compiler parse them, Astro, Python
-export const SOURCE = /\.(?:[cm]?[jt]s|[jt]sx|astro|py)$/;
-export const isCodeEdge =(e) => SOURCE.test(e.from) && SOURCE.test(e.to); // the only edges the check rules and the tab draws
-export const isAstro = (file) => file.endsWith(".astro");
-export const isPython = (file) => file.endsWith(".py");
 const RELATION_KINDS = ["association", "aggregation", "composition"];
 // one case, so `Domain` and `domain` are never two levels; no space or `|`, which split a ring; a name, not a text, so
 // at most 64 characters
@@ -52,56 +48,14 @@ const MODULE_LINE = /^-\s+\x60([^\x60]{1,1024})\x60\s*$/;
 const COMMENT_LINE = /^<!--.*-->$/;
 // a project declares tens of modules; past this many a line is unread, so a list cannot stall the walk
 const MAX_MODULES = 500;
-// one path under another, by whole segments: `src/a/b` is under `src/a`, `src/ab` is not
-export const underPath = (child, ancestor) => child === ancestor || child.startsWith(ancestor + "/");
 // the SHA-256 the stamp wrote over the modules' files, so a check can tell a graph older than its code
 const DIGEST = /^[0-9a-f]{64}$/;
 // a path is the repository's own, as the tools print it from the root: no leading `/`, no `.`/`..` or empty segment,
 // no colon (a drive or a scheme) and no space at either end
 const NOT_RELATIVE = /^(?:\/|\.\.?(?:\/|$))|\/\.\.?(?:\/|$)|\/\/|:|^\s|\s$/;
-// a module's owner is found by walking up a path's folders, so a path's cost is its depth times its length
-export const MAX_DEPTH = 64;
-// and its length is capped: V8 hashes a string past 16 383 characters by its length alone, so long paths collide in the
-// owner lookup
+// a path's depth is capped (MAX_DEPTH), and its length too: V8 hashes a string past 16 383 characters by its length
+// alone, so long paths collide in the owner lookup
 export const MAX_PATH = 1024;
-// A path, then each folder above it, by whole segments: `src/a/b.ts`, `src/a`, `src`; at most MAX_DEPTH + 1 of them, a
-// path of MAX_DEPTH slashes and each folder above it. Every "the deepest X above this path" walk goes through here.
-export function* pathAndParents(p) {
-  for (let i = p.length, n = 0; i > 0 && n <= MAX_DEPTH; i = p.lastIndexOf("/", i - 1), n++) yield p.slice(0, i);
-}
-// One path segment against one pattern segment, `*` matching any run of characters: the pattern split at its stars, the
-// first piece a prefix, the last a suffix, the middle ones found left to right — a few indexOf calls, no backtracking
-// and no regex built from the repository's text.
-function segmentMatch(p, s) {
-  const parts = p.split("*");
-  if (parts.length === 1) return p === s;
-  const first = parts[0], last = parts[parts.length - 1];
-  if (s.length < first.length + last.length || !s.startsWith(first) || !s.endsWith(last)) return false;
-  let at = first.length;
-  const end = s.length - last.length;
-  for (let i = 1; i < parts.length - 1; i++) {
-    if (!parts[i]) continue;
-    const k = s.indexOf(parts[i], at);
-    if (k < 0 || k + parts[i].length > end) return false;
-    at = k + parts[i].length;
-  }
-  return true;
-}
-// A path against a pattern of segments, `**` matching any number of whole segments: a table of segments × segments.
-export function globMatch(pattern, path) {
-  const ps = pattern.split("/"), ss = path.split("/");
-  let row = new Array(ss.length + 1).fill(false);
-  row[0] = true;
-  for (let i = 0; i < ps.length; i++) {
-    const next = new Array(ss.length + 1).fill(false);
-    for (let j = 0; j <= ss.length; j++) {
-      if (ps[i] === "**") next[j] = row[j] || (j > 0 && next[j - 1]);
-      else next[j] = j > 0 && row[j - 1] && segmentMatch(ps[i], ss[j - 1]);
-    }
-    row = next;
-  }
-  return row[ss.length];
-}
 
 // a message quotes at most this much of the repository's text
 const SHOWN = 200;
@@ -390,52 +344,3 @@ export function outward(from, to) {
   if (from.ring == null || to.ring == null) return null;
   return to.ring > from.ring || (to.ring === from.ring && to.level !== from.level);
 }
-
-// The repository's text as it may be printed into an agent's report: letters, digits, `/ . _ -` and the characters
-// `keep` names only, anything else `?`, at most `max` characters — every structure script prints through it. 300 keeps
-// a line readable; a longer path is cut, its start enough to find it
-export const printable = (s, { max = 300, keep = "" } = {}) => {
-  const allowed = new RegExp(`[^\\p{L}\\p{N}/._${keep.replace(/[\\\]^-]/g, "\\$&")}-]`, "gu");
-  const t = String(s == null ? "" : s).replace(allowed, "?");
-  return t.length > max ? t.slice(0, max) + "…" : t;
-};
-// a level list as a line or a drawing prints it: each name printed through `printable`, the whole cut at printable's
-// own length, so its start names the levels
-const SHOWN_LEVELS = 300;
-export const cutLevels = (levels, sep) => {
-  const t = levels.map((l) => printable(l)).join(sep);
-  return t.length > SHOWN_LEVELS ? t.slice(0, SHOWN_LEVELS) + "…" : t;
-};
-// lines per group a report prints: enough to act on, few enough that a hard line is never buried behind judgements; the
-// rest counted
-export const GROUP = 200;
-export const grouped = (lines, cap = GROUP) => lines.length > cap ? [...lines.slice(0, cap), `          and ${lines.length - cap} more`] : lines;
-// a reader's message: its own words kept, control, format and separator characters gone, the repository's text — the
-// reader quotes it in backticks — cut to printable
-export const readerMessage = (s) => controlsReplaced(s).replace(/`([^`]*)`/g, (_, x) => "`" + printable(x) + "`");
-// The review point (GLOSSARY: Review point): a day, `YYYY-MM-DD`, or a version, `vX.Y.Z`, as the reader took it. The
-// check decides by these alone; the Architecture tab's page embeds reviewPointKind and reviewPointOrder by their source.
-//
-// reviewPointKind: 'day' or 'version', by the point's shape.
-export function reviewPointKind(p) {
-  return /^[vV]/.test(p) ? 'version' : 'day';
-}
-// reviewPointOrder: below 0 when `a` comes first, 0 when the two are one point, above 0 when `b` does; versions part
-// by part (v0.9 before v0.10), days as written; null for a day against a version, which never sort together.
-export function reviewPointOrder(a, b) {
-  var kind = reviewPointKind(a);
-  if (kind !== reviewPointKind(b)) return null;
-  if (kind === 'day') { if (a === b) return 0; return a < b ? -1 : 1; }
-  var x = a.slice(1).split('.'), y = b.slice(1).split('.');
-  for (var i = 0; i < Math.max(x.length, y.length); i++) { var d = (Number(x[i]) || 0) - (Number(y[i]) || 0); if (d) return d; }
-  return 0;
-}
-// reviewPointDue: a day is due on it or after, given today; a version once it or a later one is in `closed`, the
-// versions closed on the tracker (or the one a stamp is about to write).
-export function reviewPointDue(p, today, closed) {
-  if (reviewPointKind(p) === 'day') return Boolean(today) && reviewPointOrder(p, today) <= 0;
-  for (var i = 0; i < closed.length; i++) { var o = reviewPointOrder(closed[i], p); if (o !== null && o >= 0) return true; }
-  return false;
-}
-// the versions a tracker snapshot shows closed: its closed milestones' titles that open on a version
-export const closedVersions = (snap) => snap.milestones.filter((m) => m.state === "closed").map((m) => versionOf(m.title)).filter(Boolean);

@@ -22,19 +22,20 @@ What a slice's subagents are told: implementers, the merger, the code-review axe
 
 ## Green
 
-The plugin's green, `node ${CLAUDE_PLUGIN_ROOT}/scripts/green.mjs`: the project's commands file's steps and the structure check, then the tested tree stamped; a stamped tree runs nothing.
+The plugin's green, `node ${CLAUDE_PLUGIN_ROOT}/scripts/green.mjs`: the project's commands file's steps and the structure check, then the tested tree stamped; a stamped tree runs nothing; a tree differing from a stamped one only in files no step reads runs its doc tests alone.
 
 - **The session's:** run once, before the merge, in the worktree holding the PR's head. A red one goes to a fix agent (the session itself in a slice it built under `/implement`), then runs again.
 - **Builders, fix rounds and mergers** run the suites their change touches (Builders, **Build**), never the green.
 - **Plainly:** a green or a suite runs in the foreground, with no redirect, wrapper or capture, its output read from the result. One expected to outlast the call's cap (600 s; a subagent's 180 s) starts in the background: its end awaited on the notice, never polled, then its output file read whole, once. Nothing is edited until it ends.
 - **Report:** the output's last lines, and the exit code where the output does not end on it.
 
-## Red-before and same-cases
+## Red-before, same-cases and reader-tests
 
 The plugin's, run in the worktree; `--help` for the rest.
 
 - **Red-before:** `node ${CLAUDE_PLUGIN_ROOT}/scripts/red-before.mjs <commit> <test file> ...` runs today's named test files on the commit's code and prints each case with its outcome. A new file they import (a helper, a fixture) is named beside them, since red-before lays only the files it is named.
 - **Same-cases:** `node ${CLAUDE_PLUGIN_ROOT}/scripts/same-cases.mjs <commit> [test file ...]` runs them on the commit and on the working tree, and says same outcomes or each case whose outcome changed.
+- **Reader tests:** `node ${CLAUDE_PLUGIN_ROOT}/scripts/reader-tests.mjs [--run] [file ...]` lists the reader tests of the named files, else of the uncommitted change: the test files whose own text names a file's path or one of its exported names. `--run` runs them. It is not the green and writes no stamp.
 
 ## Builders
 
@@ -43,12 +44,12 @@ An implementer subagent, a fix round, or the session building a slice under `/im
 - **Launched at once:** each builder brief, fix rounds too, launches as soon as it is written; the human gets a short summary of it as it starts. Merger briefs get none.
 - **Start:** fetch, then reset your own branch onto origin's tip of the integration branch (the PR's branch in a fix round): the branch your worktree was given, or the branch of its own that the session building a slice under `/implement`, or fixing it, works on. Check out no other branch.
 - **Push:** `git push origin HEAD:<branch>` to the branch the brief names (the session building a slice under `/implement`, or fixing it: its own branch); no force push. A brief that names none: push nothing.
-- **Build:** with the `tdd` skill. Run the suites your change touches, those reading the files you edit: by case id while you work, whole at the end.
+- **Build:** with the `tdd` skill. The suites your change touches are `reader-tests`' list and, for a file inside a deep module, the suites reaching its entry (Grep): run them by case id while you work, whole at the end.
 - **Red first:** quote each case's line from red-before on the base.
   - Green there: report it as a guard, and keep it.
   - Red only because its file or the entry it calls is missing, or because the base refuses its input for another reason: not red; report it apart, with the reason the base gave.
   - Unknown: not red; report it apart with the crash its file's line names.
-- **Move:** a move, a refactor or a suite split is its own commit, proven by same-cases on the base (code) or by a diff whose lines only move (text), naming the test files that read what moved; every test only when the move crosses modules. A ticket that also changes behaviour, rewords what moved, or adds a rule commits that after the move. A split's cases keep their ids, each unique across its files.
+- **Move:** a move, a refactor or a suite split is its own commit, proven by a diff whose lines only move (text), or by same-cases on the ticket's base (code), once on its last commit, over the test files that read what moved, `reader-tests`' list; every test only when a move crosses modules. A ticket that also changes behaviour, rewords what moved, or adds a rule commits that after the move. A split's cases keep their ids, each unique across its files.
 - **Moved case:** what a case moved to another suite asserted that the new suite cannot see stays asserted where it was.
 - **Commits:** a move carries the path fixes and debt rows that keep it green.
 - **Finish:** merge the base's tip into the branch with `--no-commit`. In a structured project, when the merge changes `docs/roadkeeper/structure.json`, rerun the structure command `CODING_STANDARDS.md` names, a conflict there included, and add its output. Then commit the merge.
@@ -59,7 +60,7 @@ An implementer subagent, a fix round, or the session building a slice under `/im
 - Open origin's tip of the integration branch detached. Never check the name out.
 - Read the implementer's commits (Reviews, **Diff**) against Builders, **Commits**; a break is reported, not merged.
 - Merge one implementer's branch as Builders' **Finish** says. Keep both sides' intent through a conflict.
-- Run the suites the merge touches, whole; push to the integration branch by name; report like an implementer.
+- Before the merge's commit, compare the merged tree with the ticket's tip (`git diff --cached --quiet <tip>`). Equal: run nothing, and quote the builder's same-cases and suites lines as the proof. Different: run the suites the merge touches, `reader-tests`' list, whole. Push to the integration branch by name; report like an implementer, saying which and why.
 - Close the ticket it merged (the tracker doc's **Close**) with "Merged into <branch> at <sha>".
 
 ## Reviews

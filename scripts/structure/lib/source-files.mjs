@@ -11,7 +11,9 @@ import { closeSync, openSync, readSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { insideRoot, isPlainDir } from "../../_files.mjs";
 import { readerLines } from "../../_text.mjs";
-import { SOURCE, globMatch, isAstro, isPython, printable, readerMessage, structureModel } from "./structure-model.mjs";
+import { SOURCE, globMatch, isAstro, isPython } from "./source-paths.mjs";
+import { printable, readerMessage } from "./printable.mjs";
+import { structureModel } from "./structure-model.mjs";
 import { SHOWN } from "./dependency-graph.mjs";
 import { GRAPH, SKIP, readStructureFiles, walkFiles } from "./disk-reads.mjs";
 

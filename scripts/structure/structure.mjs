@@ -22,7 +22,7 @@ import { planCheckLines } from "./lib/slice-plan.mjs";
 import { planDrawLines } from "./lib/slice-plan-drawing.mjs";
 import { architectureTab } from "./architecture-tab/architecture-tab.mjs";
 
-// The structure report of the project at `root`: { declared, model, check, unread, lines, failed }
+// The structure report of the project at `root`: { declared, model, check, unread, lines, atop, diskUnread, failed }
 // (lib/structure-report.mjs). `snapshot`, the tracker snapshot or null, makes an exception due by its closed
 // milestones' versions; `today` by its day; `stamping`, the version a stamp is about to write, adds the coming and open
 // lines; `snapshotOptional` makes a version exception with no snapshot a note line, not an unread one. A project with no
@@ -67,7 +67,11 @@ export const architecture = (declared, options) => architectureTab(declared, opt
 
 // Whether a path from a project's root, with forward slashes, matches a file pattern: `*` within a segment, `**` across
 // whole segments, as dependency-rules.md's patterns read.
-export { globMatch } from "./lib/structure-model.mjs";
+export { globMatch } from "./lib/source-paths.mjs";
+
+// What a source file's path ends with, the files the structure reads: scripts/tools/write-structure.py restamps
+// them, its own copy held to this one.
+export { SOURCE } from "./lib/source-paths.mjs";
 
 // The plan in the spec at `specPath`, drawn as mermaid on the structure at `root`: { lines, failed }.
 export const planDraw = (root, specPath) => planDrawLines(planFiles(root, specPath, null));

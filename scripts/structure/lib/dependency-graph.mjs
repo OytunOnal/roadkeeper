@@ -15,7 +15,8 @@
 //     { file, name }, the importing file and the import's name.
 
 import { plural } from "../../_text.mjs";
-import { globMatch, printable, readerMessage, underPath } from "./structure-model.mjs";
+import { globMatch, underPath } from "./source-paths.mjs";
+import { printable, readerMessage } from "./printable.mjs";
 import { testOf } from "./rulings.mjs";
 
 // a stop names this many unread files, imports or lines and counts the rest: enough to start on

@@ -2,8 +2,8 @@
 // Roadkeeper — a project's commands file, docs/roadkeeper/commands.json, read and its shape checked. Reads it only as a plain
 // file under its cap, in a plain docs/roadkeeper folder, with no link on the way. Refuses, each with a fixed line naming the
 // file: a project with no such folder, a file missing, a link or over the cap, text that is not a JSON object, a stack
-// it does not know, a field of the wrong shape. Fields it does not know are left alone. `install` and `filesPerRun` left
-// out are the stack's adapter's.
+// it does not know, a field of the wrong shape, `docTests` with no `runTests` to run them. Fields it does not know are
+// left alone. `install` and `filesPerRun` left out are the stack's adapter's.
 
 import { join } from "node:path";
 import { readPlainFile, recordsDir } from "../../_files.mjs";
@@ -35,6 +35,8 @@ const FIELDS = [
   ["beforeTests", (v) => isCommandList(v, 0), "a list of argument lists", false],
   ["lintFile", isCommand, "an argument list", false],
   ["readByNothing", isStringList, "a list of file patterns", false],
+  ["docTests", isStringList, "a list of test files", false],
+  ["notDocTests", isStringList, "a list of test files", false], // tests naming a readByNothing path, reading none
   ["install", isFolderPath, "a folder's path from the root, its parts joined by /", false],
   ["filesPerRun", isRunSize, "a whole number above 0", false],
 ];
@@ -48,8 +50,12 @@ function brokenField(parsed) {
     }
     if (!holds(parsed[name])) return `${COMMANDS_FILE}'s \`${name}\` is not ${shape}`;
   }
+  if (own(parsed, "docTests") && !own(parsed, "runTests")) return `${COMMANDS_FILE} has \`docTests\` but no \`runTests\``;
   return null;
 }
+
+// Whether a project's `commands` (readCommands') declare doc tests: `docTests` given, `[]` counting.
+export const declaresDocTests = (commands) => commands.docTests !== undefined;
 
 // { commands } with `readByNothing`, `install` and `filesPerRun` defaulted, or { refused }, the line saying why the
 // project at `root` has none.

@@ -7,10 +7,10 @@
 // the next word (`command`, `env`, …), catches `gh pr merge`, a `gh api` call on a pull request's merge path that is no
 // GET, and a `git push` landing on the default branch (what origin/HEAD names, else main, else master) or a tag: a
 // destination git expands there (`heads/<branch>`, `tags/<tag>`) too. Refuses (exit 2, one line on stderr: fixed words,
-// the commit's hash and the green's command) when a commit that lands is not green: its tree holds no green stamp and
-// differs from every stamped tree in a file the commands file's readByNothing leaves out (scripts/project-tools/,
-// `landingRefusal`). Refuses, in fixed words, a git command given an alias on its command line (`-c alias.…`,
-// `--config-env alias.…`, a GIT_CONFIG_* assignment), which can run a push under another name.
+// the commit's hash and the green's command) when a commit that lands is not green: its tree holds no green stamp and,
+// where the commands file names no docTests, differs from every stamped tree in a file its readByNothing leaves out
+// (scripts/project-tools/, `landingRefusal`). Refuses, in fixed words, a git command given an alias on its command
+// line (`-c alias.…`, `--config-env alias.…`, a GIT_CONFIG_* assignment), which can run a push under another name.
 // What lands: for `gh pr merge [<pr>] [-R <repo>]` and `gh api …/pulls/<pr>/merge`, the pull request's head, which
 // `gh pr view --json headRefOid` says; for `git push`, each refspec's source whose destination is the default branch or
 // a tag (`tag <name>` too), with no refspec the current branch where it pushes to the default one, `--all`'s default

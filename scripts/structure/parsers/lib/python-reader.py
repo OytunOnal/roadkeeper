@@ -18,7 +18,7 @@ Python's version and ends. Prints one JSON line:
 """
 import ast, json, os, sys, sysconfig, warnings
 
-MAX_NESTING = 256  # the bound on a source file every reader keeps (../../lib/source-bounds.mjs)
+MAX_NESTING = 256  # the bound on a source file every reader keeps (source-bounds.mjs)
 GUARD = "TYPE_CHECKING"  # the name whose `if` holds the imports for types alone
 TRIES = (ast.Try,) + ((ast.TryStar,) if hasattr(ast, "TryStar") else ())  # `try`, and `try` with `except*` from 3.11
 

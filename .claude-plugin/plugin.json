@@ -1,6 +1,6 @@
 {
   "name": "roadkeeper",
-  "version": "3.0.1",
+  "version": "3.1.0",
   "description": "Runs a project from an idea to a maintained product on top of Matt Pocock's skills: each slice specced, built test-first and reviewed in a pull request, the work kept on the issue tracker and drawn as one page, The Road.",
   "author": {
     "name": "Oytun Önal"

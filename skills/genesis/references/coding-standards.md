@@ -11,7 +11,7 @@ Roadkeeper's general rules, `ROADKEEPER_STANDARDS.md` at the Roadkeeper plugin's
 - Typecheck: `<command>`
 - Tests: `<command>`
 - Structure: `<command>` (JavaScript, TypeScript, Astro or Python: Roadkeeper's, set up as Roadkeeper's `structure-command.md` says), writing `docs/roadkeeper/structure.json`; the module boundaries are in `docs/roadkeeper/dependency-rules.md`.
-- Roadkeeper's tools (the green, red-before, same-cases, the check at write) run the steps of `docs/roadkeeper/commands.json`; their commands are in Roadkeeper's `briefing.md`.
+- Roadkeeper's tools (the green, red-before, same-cases, reader-tests, the check at write) run the steps of `docs/roadkeeper/commands.json`; their commands are in Roadkeeper's `briefing.md`.
 
 ## Rules
 

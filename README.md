@@ -44,7 +44,7 @@ It is for a developer who builds and maintains software in Claude Code and wants
 </details>
 
 ```mermaid
-%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#f3f0ea", "primaryTextColor": "#22261f", "primaryBorderColor": "rgb(129, 100, 0)", "lineColor": "rgb(129, 100, 0)", "edgeLabelBackground": "#f3f0ea"}}}%%
+%%{init: {"theme": "base", "themeVariables": {"primaryColor": "#d9cba6", "primaryTextColor": "#22261f", "primaryBorderColor": "#a07c00", "lineColor": "#a07c00", "edgeLabelBackground": "#d9cba6"}}}%%
 flowchart TD
   I["idea or existing code"] --> P["brainstorm, design,<br/>plan versions"]
   P --> S["slice by slice: spec,<br/>build test-first,<br/>review and<br/>structure check,<br/>merge"]
@@ -66,7 +66,7 @@ flowchart TD
 - **After launch:** `/roadkeeper:steward` takes each report: a bug is traced to the promise the product broke, with fixes offered for you to pick; an idea becomes a candidate.
 - **The Road:** one page drawn from the tracker and the code's structure, showing progress by version, what waits on you, and the code's levels and modules.
 - **Architecture:** the code follows clean architecture's dependency rule, the domain at the centre and every dependency pointing inward, and is grouped into deep modules: a folder behind one entry file, everything inside private, on one level or several, nested as it grows. The structure check holds both before every merge in JavaScript, TypeScript, Astro and Python code, The Road draws them, and each version's close reads the code against them, so what an agent writes stays legible as it grows. [The rules](skills/slice/references/structure.md).
-- **While it works:** hooks run your linter on every file written and tell you at each session start what waits on you.
+- **While it works:** hooks run your linter on every file written and tell you at each session start what waits on you; a change to your documents alone runs only the tests that read them, so it goes green in seconds.
 
 What changed in each version: the [releases](https://github.com/OytunOnal/roadkeeper/releases).
 
@@ -79,7 +79,7 @@ A plugin runs code in your session. Roadkeeper's are the hooks under `scripts/` 
 - `merge-guard` reads the pull request a `gh` merge names.
 - The check at write runs your project's linter, as your `docs/roadkeeper/commands.json` names it.
 
-Nothing else leaves your machine. Genesis or adopt sets up the project's tools, and with them your `.gitignore` names the snapshot ([Ignored files](skills/slice/references/project-tools.md)). Read the hooks, and the scripts they run or import from `scripts/`, before you install it.
+Nothing else leaves your machine. Genesis or adopt sets up the project's tools, and with them your `.gitignore` names the snapshot ([Ignored files](skills/slice/references/project-tools.md#ignored-files)). Before you install it, read `scripts/hooks.json`, which says when each hook runs; then the opening comment of each of the seven files it names, which says what that hook reads, writes and refuses; then `scripts/_hook.mjs`, the rules they share.
 
 1. In a terminal, install the skills Roadkeeper calls. This installs all of Matt Pocock's skills, for every project on your machine (`-g`), without asking (`-y`):
 
@@ -116,7 +116,7 @@ It works when `docs/roadkeeper/road.html` opens with your project's name on it. 
 A change to one of these that makes you act, a file to move or a command to type differently, comes only in a major version, and its release says what to do.
 
 - **Skills**, each `/roadkeeper:<name>`: `adopt`, `brainstorm`, `design-critique`, `devils-advocate`, `genesis`, `idea`, `launch`, `market-research`, `product-critique`, `retro-spec`, `road`, `slice`, `steward`.
-- **Commands**, `node <roadkeeper>/scripts/<name>.mjs` in your project's root, `<roadkeeper>` being the folder Claude Code installed the plugin into, each with its usage in its header: `copy-lint-rules`, `green`, `red-before`, `road`, `same-cases`, `structure`, `structure-check`, `structure-plan`, `structure-stamp`, `version-forecast`.
+- **Commands**, `node <roadkeeper>/scripts/<name>.mjs` in your project's root, `<roadkeeper>` being the folder Claude Code installed the plugin into, each with its usage in its header: `copy-lint-rules`, `green`, `reader-tests`, `red-before`, `road`, `same-cases`, `structure`, `structure-check`, `structure-plan`, `structure-stamp`, `version-forecast`.
 - **General rules**, `ROADKEEPER_STANDARDS.md` at Roadkeeper's root: the rules every project's review holds. A project changes one only by a departure, a line under `## Departures` in its `CODING_STANDARDS.md` naming the rule and why.
 - **Hooks**, each acting only in a project holding `docs/roadkeeper/`:
   - `nudge`, at session start, counts what waits on you, rewriting `issues.json` and, on the default branch only, redrawing The Road;
@@ -128,7 +128,7 @@ A change to one of these that makes you act, a file to move or a command to type
   - `skills-pointer`, at every session start and after a compact or a clear, tells the session to work from Roadkeeper's skill files.
 - **Files your project keeps**, under `docs/roadkeeper/`:
   - `structure.json`, the structure command's graph of your JavaScript, TypeScript, Astro and Python files (an Astro file's level tag opens its frontmatter; a Python file's is its first `#` comment, `# @level`), and `dependency-rules.md`, your levels and exceptions (`skills/slice/references/structure.md`);
-  - `commands.json`, your project's own commands, which the green, red-before, same-cases and the hooks run (`skills/slice/references/project-tools.md`): its `js-ts` stack reads JUnit and ESLint's JSON, its `python` stack pytest's JUnit and the lint line `path:line:col: CODE message`; and `ceilings.json`, the files over 400 lines;
+  - `commands.json`, your project's own commands, which the green, red-before, same-cases, `reader-tests` and the hooks run (`skills/slice/references/project-tools.md`): a green step `{tests}` runs every test file; `docTests` lists the tests that read your documents, so a change to documents alone runs only them, and `notDocTests` the tests that name a document without reading it. Its `js-ts` stack reads JUnit and ESLint's JSON, its `python` stack pytest's JUnit and the lint line `path:line:col: CODE message`; and `ceilings.json`, the files over 400 lines;
   - `one-pager.md`, `assumptions.md`, `ARCHITECTURE.md`, `threats.md`, `metrics.md`;
   - `design/`, `critiques/`, `research/`;
   - `issues.json`, the tracker's snapshot, and `road.html`, The Road, both written by the `road` command and by the `nudge` and `road-redraw` hooks.
@@ -143,15 +143,16 @@ A change to one of these that makes you act, a file to move or a command to type
 
 The next versions, by their titles:
 
-- v3.0.2 — The tools and the plugin's parts are deep modules
-- v3.0.3 — The code that draws The Road and plans a change lives in folders of their own
-- v3.1.0 — Roadkeeper's own tools and rules cost a session less
-- v3.1.1 — Roadkeeper's tools say what they did, and a slice runs without a hand
-- v3.1.2 — Roadkeeper's skills read short and general
-- v3.2.0 — The checks see more
-- v3.3.0 — Every project's checks fit its code
-- v3.3.1 — Roadkeeper's own checks are kept once and prove a change in one run
-- v3.4.0 — The Road shows a project's decisions, its words and a slice's plan
+- v3.1.1 — The code that draws The Road and plans a change lives in folders of their own
+- v3.2.0 — A change runs only the tests it touches, and a red from load reruns only what failed
+- v3.3.0 — Roadkeeper's own tools and rules cost a session less
+- v3.4.0 — Roadkeeper's tools say what they did, and a slice runs without a hand
+- v3.4.1 — Roadkeeper's skills and the Architecture tab read short and plain
+- v3.5.0 — The checks see more
+- v3.6.0 — Every project's checks fit its code
+- v3.6.1 — Roadkeeper's own checks are kept once and prove a change in one run
+- v3.6.2 — Roadkeeper's tools and tests split before they grow
+- v3.7.0 — The Road shows a project's decisions, its words and a slice's plan
 
 ## Proven on
 

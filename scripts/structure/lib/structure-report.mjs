@@ -4,6 +4,7 @@
 
 import { STRUCTURE_UNREAD } from "./structure-model.mjs";
 import { judgingOptions, rulings } from "./rulings.mjs";
+import { reportLines } from "./report-lines.mjs";
 
 // the check's last line when it fails
 const VIOLATIONS = "structure: violations";
@@ -18,12 +19,18 @@ export function undeclaredReport() {
 
 // The report over the model `sm`, from what was read: `read.md` and `read.js`, each structure file's text or null, and
 // `read.facts`, the disk's (disk-facts.mjs, diskFacts). Returns { declared, model, check (the rulings' whole result),
-// unread (the structure files not read, each { where, what }), lines (what the check prints), failed (whether it exits
-// 1) }. `options`, the caller's judging options, built once (rulings.mjs, judgingOptions). A file not read, or empty,
-// stops the lines at the unread line; the check still runs, for the tab.
+// unread (the structure files not read, each { where, what }), lines (what the check prints), atop (the lines the
+// Architecture tab opens on), diskUnread (the lines the disk gave), failed (whether it exits 1) }, the lines as
+// reportLines (report-lines.mjs) writes them. `options`, the caller's judging options, built once (rulings.mjs,
+// judgingOptions). A file not read, or empty, stops the lines at the unread line; the check still runs, for the tab.
 export function structureReport(sm, read, options = {}) {
-  const check = rulings(sm, read.facts, judgingOptions(options));
+  const judging = judgingOptions(options);
+  const check = rulings(sm, judging);
+  const reportedLines = reportLines({ sm, facts: read.facts }, check, judging);
   const unread = FILES.filter((f, i) => [read.md, read.js][i] == null).map(notRead);
   const stopped = !read.md || !read.js;
-  return { declared: true, model: sm, check, unread, lines: stopped ? [STRUCTURE_UNREAD, VIOLATIONS] : check.lines, failed: stopped || check.failed };
+  return {
+    declared: true, model: sm, check, unread, ...reportedLines,
+    lines: stopped ? [STRUCTURE_UNREAD, VIOLATIONS] : reportedLines.lines, failed: stopped || reportedLines.failed,
+  };
 }

@@ -213,7 +213,7 @@ Roadkeeper's measurement of a skill or agent file on a golden set.
 _Avoid_: eval suite, benchmark
 
 **Green**:
-The project's whole check passing at once: every suite, the check command and the plugin check. Nothing is merged that is not green.
+The project's whole check passing at once: every suite, the check command and the plugin check; a tree differing from a stamped one only in files no step reads runs its doc tests alone. Nothing is merged that is not green.
 _Avoid_: CI, test run
 
 **Green stamp**:
@@ -223,6 +223,14 @@ _Avoid_: stamp alone (the structure stamp's word)
 **Tested tree**:
 The tree a green runs on: the last commit's with nothing uncommitted, else the one committing all of it would make. Its green stamp is named by it.
 _Avoid_: working tree (git's word for the files on disk)
+
+**Doc test**:
+A test file that reads one of the project's documents, a file the green otherwise skips; it runs when only such files changed.
+_Avoid_: docs check, document test
+
+**Reader test**:
+A test file whose own text names a changed file's path or one of its exported names: the tests a change touches, run before its commit; the full green still decides.
+_Avoid_: guard suite, related test
 
 **Sibling**:
 A folder outside a project's root that its manifest names as a dependency by its path; a run on an older commit finds it beside the main checkout.
@@ -238,6 +246,10 @@ The line `path:line:col: CODE message` a linter prints for one finding, the colu
 **Case id**:
 A test case's handle, the first word of its name, saying what it checks: named in a command, a review or a threat's row, and kept when the rest of the name is reworded.
 _Avoid_: case number, test code
+
+**Probe**:
+A named piece of a test's script, run in node on a case's data, whose printed result the test reads.
+_Avoid_: runner (the helper that starts it), snippet, inline script
 
 **Unknown case**:
 A case of a test run that also reported a failure belonging to no file it ran, in a file that failure's text names, or in any file of the run when it names none of the files holding cases; or a case of a file whose own run, alone, reported such a failure: nothing proves its outcome, so it is neither red nor green.

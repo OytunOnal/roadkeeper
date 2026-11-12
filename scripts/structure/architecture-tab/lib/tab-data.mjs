@@ -3,7 +3,8 @@
 // rulings (rulings.mjs), which the page ships as JSON and the client's counting (tab-counts.mjs) folds into views. Pure.
 
 import { codeFiles } from "../../lib/module-records.mjs";
-import { DECL_KINDS, EDGE_KINDS, edgeEnds, isCodeEdge, placed } from "../../lib/structure-model.mjs";
+import { isCodeEdge } from "../../lib/source-paths.mjs";
+import { DECL_KINDS, EDGE_KINDS, edgeEnds, placed } from "../../lib/structure-model.mjs";
 
 // an edge's mark on the page: 0 inward, 1 outward, 2 outward but covered by a declared exception, 3 outward and its
 // exception due; drawsRed says which draw red. The page embeds it as JSON.

@@ -10,9 +10,10 @@
 // never closed, and an HTML block a renderer hides, anywhere. An unread line makes the check and the drawing exit 1.
 
 import { fenceStep } from "../../_text.mjs";
+import { cutLevels, grouped, printable, readerMessage } from "./printable.mjs";
+import { pathAndParents } from "./source-paths.mjs";
 import {
-  ARROW, EDGE_KINDS, LEVEL_NAME, STRUCTURE_UNREAD, cutLevels, grouped, pairsOf, partLevels, pathAndParents, placed, printable, readerMessage, readsCode,
-  structureModel, structurePath,
+  ARROW, EDGE_KINDS, LEVEL_NAME, STRUCTURE_UNREAD, pairsOf, partLevels, placed, readsCode, structureModel, structurePath,
 } from "./structure-model.mjs";
 
 // a slice plans a handful of modules and edges: past this many plan lines the rest are unread, and said

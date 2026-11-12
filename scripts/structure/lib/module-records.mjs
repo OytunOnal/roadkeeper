@@ -5,7 +5,7 @@
 // say it (moduleCountWords). Pure.
 
 import { plural } from "../../_text.mjs";
-import { SOURCE, underPath } from "./structure-model.mjs";
+import { SOURCE, underPath } from "./source-paths.mjs";
 
 // a list's code files (SOURCE), a stylesheet or a data file left out; null when the list is missing or empty, as for a
 // module whose files the stamp did not list

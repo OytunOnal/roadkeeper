@@ -20,8 +20,8 @@ import { statSync } from "node:fs";
 import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findProgram } from "../../../_git.mjs";
-import { nestingStop } from "../../lib/source-bounds.mjs";
-import { printable } from "../../lib/structure-model.mjs";
+import { printable } from "../../lib/printable.mjs";
+import { nestingStop } from "./source-bounds.mjs";
 
 // the reader, beside this file
 const READER = fileURLToPath(new URL("./python-reader.py", import.meta.url));
@@ -73,24 +73,24 @@ function stopOnFailedRead(e, version) {
 // What the Python 3 on the PATH reads of the `.py` files given: { read, heritage, declarations, tool, foundNowhere },
 // as the port gives them, the declarations `declared`'s, `tool` naming Python by its major and minor version,
 // `foundNowhere` the imports found in no search place and not in the standard library, { file, name }; or { stop }.
-export function readPythonFiles(root, files, declared) {
+export function pythonParser(root, { files, declared }) {
   const python = findPython3();
   if (!python) return NO_PYTHON;
   let output;
   try { output = runReader(python.program, [], { input: JSON.stringify({ root, files }), timeout: READ_TIMEOUT }); } catch (e) {
     return stopOnFailedRead(e, python.version);
   }
-  const got = parseReaderOutput(output, files);
-  if (!got) return { stop: "the Python reader's output does not read" };
-  if (got.stop) return stopOnUnreadFile(got.stop, got.version);
-  const read = got.files.map(({ file, imports }) => ({ file, imports: imports.flatMap((i) => resolveImport(root, file, i)) }));
+  const parsedOutput = parseReaderOutput(output, files);
+  if (!parsedOutput) return { stop: "the Python reader's output does not read" };
+  if (parsedOutput.stop) return stopOnUnreadFile(parsedOutput.stop, parsedOutput.version);
+  const read = parsedOutput.files.map(({ file, imports }) => ({ file, imports: imports.flatMap((i) => resolveImport(root, file, i)) }));
   const wanted = new Set(declared), declarations = Object.create(null);
-  for (const row of got.files) if (wanted.has(row.file)) declarations[row.file] = markExported(row);
+  for (const row of parsedOutput.files) if (wanted.has(row.file)) declarations[row.file] = markExported(row);
   const given = new Set(files);
-  const heritage = got.files.flatMap(({ file, bases }) => [...new Set(bases.map((b) => findBaseFile(root, file, b)))]
+  const heritage = parsedOutput.files.flatMap(({ file, bases }) => [...new Set(bases.map((b) => findBaseFile(root, file, b)))]
     .filter((to) => to !== null && to !== file && given.has(to)).map((to) => ({ from: file, to, kind: "inheritance" })));
-  const foundNowhere = listImportsFoundNowhere(root, got.files);
-  return { read, heritage, declarations, tool: `Python ${toMajorMinor(got.version)}`, foundNowhere };
+  const foundNowhere = listImportsFoundNowhere(root, parsedOutput.files);
+  return { read, heritage, declarations, tool: `Python ${toMajorMinor(parsedOutput.version)}`, foundNowhere };
 }
 
 // The absolute imports in `rows` found in no search place, their first part at neither the root nor `src/`, and not the
@@ -146,14 +146,14 @@ const isStop = (s, files) => isObject(s) && files.includes(s.file) && ["syntax",
 
 // the reader's output read and checked against its shape: one row per file given, in order; null when it is not
 function parseReaderOutput(output, files) {
-  let got;
-  try { got = JSON.parse(output); } catch { return null; }
-  const versioned = isObject(got) && typeof got.version === "string" && PYTHON_3.test(got.version);
+  let parsedOutput;
+  try { parsedOutput = JSON.parse(output); } catch { return null; }
+  const versioned = isObject(parsedOutput) && typeof parsedOutput.version === "string" && PYTHON_3.test(parsedOutput.version);
   if (!versioned) return null;
-  if ("stop" in got) return isStop(got.stop, files) ? got : null;
-  const rows = Array.isArray(got.files) ? got.files : [];
+  if ("stop" in parsedOutput) return isStop(parsedOutput.stop, files) ? parsedOutput : null;
+  const rows = Array.isArray(parsedOutput.files) ? parsedOutput.files : [];
   const fits = rows.length === files.length && rows.every((r, n) => isRow(r, files[n]));
-  return fits ? got : null;
+  return fits ? parsedOutput : null;
 }
 
 // a module's file under `base`, root-relative: its package's `__init__.py`, else its `.py`; null for none

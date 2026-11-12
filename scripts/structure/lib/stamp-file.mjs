@@ -2,7 +2,8 @@
 // Roadkeeper — the stamp's disk work: structure.json read through the one guarded read (disk-reads.mjs), and stamped from
 // the disk's facts (disk-facts.mjs) into the text to write in its place. Writes nothing.
 
-import { grouped, structureModel } from "./structure-model.mjs";
+import { grouped } from "./printable.mjs";
+import { structureModel } from "./structure-model.mjs";
 import { stampData } from "./staleness-digest.mjs";
 import { diskFacts } from "./disk-facts.mjs";
 import { readStructureFiles } from "./disk-reads.mjs";
