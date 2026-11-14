@@ -2,7 +2,7 @@
 // Roadkeeper — The Road's page's CSS, with the page's own furniture: tabs, folds, the unreadable line. Its colours, font
 // stacks and scroll shadow are the token file's names (scripts/road/tokens.css), inlined before it.
 
-import { SLICES_SHARE } from "./road-model.mjs";
+import { SLICES_SHARE } from "../../lib/road-model.mjs";
 
 // the page's style sheet, after the tokens and before the Architecture tab's own
 export const ROAD_STYLE = `
@@ -52,10 +52,6 @@ export const ROAD_STYLE = `
 
   .legend { display: grid; grid-template-columns: 1fr; gap: 6px 18px; margin-top: 16px; font-size: 13px; color: var(--muted); }
   .legend span::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
-  .legend .g::before { background: var(--done); }
-  .legend .a::before { background: var(--warn); }
-  .legend .c::before { background: transparent; border: 1.5px dashed var(--planned); }
-  .legend .v::before { vertical-align: -2px; }
   .legend b { color: var(--ink); font-weight: 500; }
   /* the legend's group: a heading to open it below 560 px; wider, the legend shows whatever its state where the browser
      has ::details-content, and the heading stays to open it where it has not */
@@ -77,8 +73,6 @@ export const ROAD_STYLE = `
   .slice .when { font-family: var(--mono); font-size: 12px; color: var(--muted); text-align: right; padding-top: 4px; line-height: 1.5; }
   .slice .dot { position: relative; height: 100%; }
   .slice .dot::before { content: ""; position: absolute; left: 50%; translate: -50% 0; top: 7px; width: 12px; height: 12px; border-radius: 50%; background: var(--done); box-shadow: 0 0 0 3px var(--ground); }
-  .slice.now .dot::before { background: var(--warn); }
-  .slice.cand .dot::before { background: var(--ground); border: 1.5px dashed var(--planned); }
   /* a card keeps to its column: its body does not grow to its widest content, so a wide diagram scrolls in its own
      box, and any word in it may wrap; a code block (pre code, below) and a table keep their whole words and scroll
      sideways in their own box */
@@ -95,7 +89,6 @@ export const ROAD_STYLE = `
   /* an open card's heading line, on the ground over a thin rule: it sticks to the window's top while the card spans
      it and rests in place at the card's top, its text where a closed card's sits; a closed card's stays in place */
   .slice.open .heading { position: sticky; top: 0; z-index: 1; background: var(--ground); border-bottom: 1px solid var(--line); padding: 6px 0; margin-top: -6px; }
-  .slice.cand h3 { color: var(--muted); }
   .divider { display: grid; grid-template-columns: 112px 40px 1fr; gap: 0 10px; align-items: center; margin: 10px 0 2px; }
   .divider .t { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
   .group { margin-top: 10px; }
@@ -113,12 +106,9 @@ export const ROAD_STYLE = `
   .stamp .bar::before { content: ""; position: absolute; left: 50%; translate: -50% 0; top: -6px; }
   .stamp .v { font-family: var(--mono); font-size: 13px; color: var(--accent); font-weight: 500; }
   .stamp .v small { color: var(--muted); font-weight: 400; margin-left: 8px; }
-  .stamp.plan .v { color: var(--muted); }
   .tag { font-family: var(--mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; padding: 1px 6px; border: 1px solid var(--line); color: var(--muted); margin-left: 8px; vertical-align: 2px; white-space: nowrap; }
-  .tag.g { color: var(--done); border-color: var(--done); background: var(--done-soft); }
-  /* active, and "waits on your word": the waiting colours, Waiting on you's */
-  .tag.a, .tag.wait { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
   .tag.ver { color: var(--accent); border-color: var(--accent-soft); text-transform: none; }
+  .tag.bug { color: var(--bad); border-color: var(--bad); }
   /* an issue's heading: its h3 names the issue alone, inline, and what sits beside it follows on its line; the line
      takes the h3's face, size and height from the h3's rules above, so it reads as one heading */
   .slice .heading > h3 { display: inline; }
@@ -211,8 +201,6 @@ export const ROAD_STYLE = `
 
   /* the lead, what the project is, under the title: the page's text size, filling the column as its other prose does */
   .lead { color: var(--ink); margin-top: 12px; }
-  .slice.shut .dot::before { background: var(--done); border-radius: 0; transform: rotate(45deg) scale(0.8); }
-  .slice.shut h3 { color: var(--muted); }
   /* only a late card wears the orange edge; its padding gives back the 2 px the edge takes, so every card's text starts
      at the same x */
   .card.late { background: var(--warn-soft); border-left: 3px solid var(--warn); padding-left: 14px; }
@@ -225,11 +213,31 @@ export const ROAD_STYLE = `
   .slice .full h4.part { margin-top: 14px; } /* the detail's own parts, Tickets and Comments; a body's headings keep 16px */
   .comment { border-left: 2px solid var(--line); padding-left: 10px; margin-top: 8px; }
   .comment .s { margin-top: 0; }
+
+  /* each look, in the key's order (road-key.mjs, KEY): its key swatch, its marker on the rail, its chip and its
+     heading's colour, as each has them */
+  /* real-green: its marker the rail's own, done's fill (.slice .dot::before) */
+  .legend .g::before { background: var(--done); }
+  .tag.g { color: var(--done); border-color: var(--done); background: var(--done-soft); }
+  /* mock-green */
   .slice.mock .dot::before { background: var(--done-soft); border: 2px solid var(--done); }
   .tag.m { color: var(--done); border-color: var(--done); background: transparent; }
   .legend .m::before { background: var(--done-soft); border: 1.5px solid var(--done); }
-
-  /* the milestone marker: one rule draws the road's marker, on the bar at every width, and the key's swatch; the
-     planned one is dashed on the ground, ringed as the released one is, and the progress bar's release tenth with it */
+  /* active, and "waits on your word": the waiting colours, Waiting on you's */
+  .slice.now .dot::before { background: var(--warn); }
+  .legend .a::before { background: var(--warn); }
+  .tag.a, .tag.wait { color: var(--warn); border-color: var(--warn); background: var(--warn-soft); }
+  /* closed without real-use check, and closed: no swatch, done's square turned */
+  .slice.shut .dot::before { background: var(--done); border-radius: 0; transform: rotate(45deg) scale(0.8); }
+  .slice.shut h3 { color: var(--muted); }
+  /* planned / no milestone yet */
+  .slice.cand .dot::before { background: var(--ground); border: 1.5px dashed var(--planned); }
+  .legend .c::before { background: transparent; border: 1.5px dashed var(--planned); }
+  .slice.cand h3 { color: var(--muted); }
+  /* milestone, closed or released: one rule draws the road's marker, on the bar at every width, and the key's swatch */
+  .legend .v::before { vertical-align: -2px; }
   .stamp .bar::before, .legend .v::before { width: 14px; height: 14px; box-sizing: border-box; border-radius: 0; background: var(--accent); border: 0; box-shadow: 0 0 0 3px var(--ground); }
-  .stamp.plan .bar::before, .legend .v.plan::before, .meter .release { background: var(--ground); border: 1.5px dashed var(--planned); }`;
+  /* milestone, planned: dashed on the ground, ringed as the released one is, and the progress bar's release tenth with
+     it; its version muted */
+  .stamp.plan .bar::before, .legend .v.plan::before, .meter .release { background: var(--ground); border: 1.5px dashed var(--planned); }
+  .stamp.plan .v { color: var(--muted); }`;

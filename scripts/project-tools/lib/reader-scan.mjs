@@ -10,6 +10,7 @@
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import { readPlainFile } from "../../_files.mjs";
+import { escapeForPattern } from "../../_text.mjs";
 import { shownName, workingFile } from "./commit-tree.mjs";
 
 const CAP = 512 * 1024; // bytes of one file read: many times the largest suite
@@ -25,8 +26,6 @@ const NAME = /^[A-Za-z_$][\w$]*$/; // a JS name, so a list item that is none nam
 // `Path("docs") / "guide.md"` puts them
 const SEPARATORS = "[\\s\"'`/\\\\,()]+";
 const NOT_A_NAME = new Set(["default"]); // an `export { x as default }` names no word a test would say
-
-const escaped = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 // The names a JS/TS text exports: those declared exported, and each item of an `export { … }` list by its exported
 // name, the word after `as` when it has one.
@@ -46,8 +45,8 @@ function exportedNames(path, text) {
 // The pattern of a text naming the file at `path`: its parts in order with SEPARATORS between, no word
 // running on at either end; or, given its exported `names`, one of them as a whole word.
 function namingPattern(path, names) {
-  const byPath = `(?<![\\w.-])${path.split("/").map(escaped).join(SEPARATORS)}(?![\\w-]|\\.\\w)`;
-  const byName = names.length ? `|(?<![\\w$])(?:${[...new Set(names)].map(escaped).join("|")})(?![\\w$])` : "";
+  const byPath = `(?<![\\w.-])${path.split("/").map(escapeForPattern).join(SEPARATORS)}(?![\\w-]|\\.\\w)`;
+  const byName = names.length ? `|(?<![\\w$])(?:${[...new Set(names)].map(escapeForPattern).join("|")})(?![\\w$])` : "";
   return new RegExp(byPath + byName);
 }
 

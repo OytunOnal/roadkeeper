@@ -9,12 +9,12 @@
 // Reads one `## Structure` section, strict: plan lines only. Refuses, as unread, any other line in it, a fence in it or
 // never closed, and an HTML block a renderer hides, anywhere. An unread line makes the check and the drawing exit 1.
 
-import { fenceStep } from "../../_text.mjs";
-import { cutLevels, grouped, printable, readerMessage } from "./printable.mjs";
-import { pathAndParents } from "./source-paths.mjs";
+import { fenceStep } from "../../../_text.mjs";
+import { cutLevels, grouped, printable, readerMessage } from "../../lib/printable.mjs";
+import { pathAndParents } from "../../lib/source-paths.mjs";
 import {
   ARROW, EDGE_KINDS, LEVEL_NAME, STRUCTURE_UNREAD, pairsOf, partLevels, placed, readsCode, structureModel, structurePath,
-} from "./structure-model.mjs";
+} from "../../lib/structure-model.mjs";
 
 // a slice plans a handful of modules and edges: past this many plan lines the rest are unread, and said
 const MAX_PLAN = 200;
@@ -43,7 +43,7 @@ const HIDDEN = /^ {0,3}<(?:!|\?|(?:script|style|pre|textarea)(?:[\s>]|$))/i;
 
 // { modules: [{ path, levels, line }], edges: [{ from, to, kind, line }], seams: [{ path, line }], found, malformed }
 // — `found` is whether the spec has its `## Structure` section
-export function slicePlan(spec) {
+function slicePlan(spec) {
   const modules = [], edges = [], seams = [], malformed = [];
   const lines = String(spec || "").replace(/^\uFEFF/, "").split(/\r\n|\r|\n/);
   // the heading counted on every line, in a fence or a comment too: a second one, hidden from a renderer or from this
@@ -92,7 +92,7 @@ export function slicePlan(spec) {
 
 // A module line naming a level dependency-rules.md does not declare (`sm`, any model read from it): unread at its line, as the
 // reader's unread lines are — the first such level quoted, the rest counted. [{ where, what }]
-export function undeclaredLevels(plan, sm) {
+function undeclaredLevels(plan, sm) {
   const out = [];
   for (const m of plan.modules) {
     const u = m.levels.filter((l) => placed(sm, l).ring === null);
@@ -129,7 +129,7 @@ export function planEdges(plan, sm) {
 // tag's levels compared alike, and a file the head does not list is not built. An edge's kind is drawn, not compared: a
 // pair is one dependency whatever its kinds. Not compared: whether a seam has its adapters (review reads the seams),
 // what was removed, and a new file no module holds that no line plans.
-export function planDiff(plan, base, head) {
+function planDiff(plan, base, head) {
   const basePaths = new Set(base.modules.map((m) => m.path));
   const headLevels = partLevels(head), baseLevels = partLevels(base);
   const plannedModules = new Map(plan.modules.map((m) => [m.path, m]));
@@ -173,9 +173,9 @@ export function planRead({ spec, md, js }) {
   return { plan, head, unread };
 }
 
-// What was built against the plan, from the files read and `noBase`, whether the slice adds structure.json:
-// { lines, failed } — failed on any line but a seam's.
-export function planCheckLines(files, noBase) {
+// What was built against the plan, from the files read; `noBase` when the slice adds structure.json: { lines, failed }
+// — failed on any line but a seam's.
+export function planCheckLines(files, { noBase }) {
   const r = planRead(files);
   if (r.stop) return { lines: r.stop, failed: true };
   const { plan, head, unread } = r;

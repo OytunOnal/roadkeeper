@@ -1,6 +1,6 @@
 // @level presentation
 // Roadkeeper — The Road's page client's one embedded entry, roadClient, and what the clients decide, pure. The page embeds
-// each function here by its own source (road-html.mjs), beside the tabs' client (tabs-client.mjs) and the diagram client
+// each function here by its own source (../page.mjs), beside the tabs' client (tabs-client.mjs) and the diagram client
 // (diagram-client.mjs), in one scope; the page's script returns roadClient. They see only the language's globals.
 
 export function roadClient() {

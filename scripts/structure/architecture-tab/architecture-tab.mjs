@@ -127,7 +127,10 @@ function structureHtml(view, unread, sources, src = "") {
     keyHtml(),
     `<div class="sv" id="sv" data-src="${esc(src)}">`,
     `<div class="sv-bar"><span class="sv-crumb" id="sv-crumb"></span><span class="sv-count" id="sv-count"></span><span class="sv-ctl"><span class="sv-seg" role="group" aria-label="Arrows"><button type="button" data-ar="bad" aria-pressed="true">Violations</button><button type="button" data-ar="all" aria-pressed="false">All arrows</button><button type="button" data-ar="selected" aria-pressed="false">Selected</button></span><button type="button" class="sv-btn" data-z="out" aria-label="Zoom out">−</button><button type="button" class="sv-btn" data-z="in" aria-label="Zoom in">+</button><button type="button" class="sv-btn" data-z="fit">Fit</button></span></div>`,
-    `<div class="sv-main"><div class="sv-wrap"><div class="sv-stage" id="sv-stage"><svg id="sv-svg" role="group" aria-label="Modules by level"><g id="sv-world"></g></svg></div></div><aside class="sv-side" id="sv-side"></aside></div>`,
+    // the not-started line: the drawing removes it once drawn, so a page cut before the drawing's script, or a script
+    // stopped on its data, still says so; its link reloads the page as it is, the address and so the tab kept, needing
+    // none of the page's scripts, and where a host refuses the handler it opens the page itself
+    `<div class="sv-main"><div class="sv-wrap"><div class="sv-stage" id="sv-stage"><p class="sv-not-started" id="sv-not-started">The drawing has not started. If it stays empty, <a href="" onclick="location.reload(); return false">reload the page</a>.</p><svg id="sv-svg" role="group" aria-label="Modules by level"><g id="sv-world"></g></svg></div></div><aside class="sv-side" id="sv-side"></aside></div>`,
     `<div class="sv-tip" id="sv-tip"></div>`,
     `</div>`,
     `<script type="application/json" id="sv-data">${jsonInScript(view)}</script>`,
@@ -183,6 +186,9 @@ const STRUCTURE_CSS = `
      it does: a layer over the drawing, which would cover the stage's own outline */
   .sv-stage:focus { outline: none; }
   .sv-stage.held::after { content: ""; position: absolute; inset: 0; border: 2px solid var(--accent); pointer-events: none; }
+  /* the not-started line sits over the empty drawing, so its link takes the click */
+  .sv-not-started { position: relative; z-index: 1; margin: 0; padding: 24px 16px; color: var(--muted); }
+  .sv-not-started a { color: var(--accent); }
   .sv-stage svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; user-select: none; -webkit-user-select: none; }
   .sv-side { border-top: 1px solid var(--line); background: var(--paper); padding: 14px 16px; font-size: 13px; scroll-margin-bottom: 16px; }
   /* from the page's own breakpoint the detail is a column beside the stage, from its top: its size contained, so the
@@ -210,7 +216,7 @@ const STRUCTURE_CSS = `
   .sv .card.span .body { stroke-width: 1.4; }
   .sv .card.bad .body { stroke: var(--bad, currentColor); } .sv .card.exc .body { stroke: var(--warn, currentColor); }
   /* a box keeps its border's colour in every mode; hovered, selected and reached by Tab only thicken it, Tab's dashed */
-  .sv .card:hover .body { stroke-width: 1.8; } .sv .card.sel .body { stroke-width: 2.6; }
+  .sv .card:hover .body { stroke-width: 2.6; } .sv .card.sel .body { stroke-width: 4; }
   .sv .card .title { fill: var(--ink, currentColor); font: 500 13.5px var(--body); }
   .sv .card.pkg .title { fill: var(--accent, currentColor); font: italic 500 14px var(--body); }
   .sv .card .rule { stroke: var(--card-edge, currentColor); stroke-width: 1; }

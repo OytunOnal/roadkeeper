@@ -7,6 +7,9 @@ export const esc = (s) => String(s == null ? "" : s)
   .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
   .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
+// A string as a regular expression matches it, literally: every character a pattern reads as syntax escaped.
+export const escapeForPattern = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 // Self-contained: the Architecture tab embeds it into its page by its source text.
 export function plural(n, one, many = one + "s") {
   return `${n} ${n === 1 ? one : many}`;

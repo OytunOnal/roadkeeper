@@ -19,7 +19,7 @@
     --done-soft: #E3EEDF; /* done's fill; the bar's empty part */
     --warn: #A24E11; /* active, flags, the unread line, the tabs' badge; the drawing's excepted edges; read on: ground, paper, chip, warn-soft; drawn on: ground, band, paper, chip, warn-soft */
     --warn-soft: #FAE4D4; /* warn's fill; a late card; the tabs' badge */
-    --bad: #C2332B; /* the drawing's outward edges and counts; read on: ground, paper, chip; drawn on: ground, band, paper, chip */
+    --bad: #C2332B; /* the drawing's outward edges and counts; a bug's tag on the road; read on: ground, paper, chip; drawn on: ground, band, paper, chip */
     --bad-hot: #E0261A; /* an outward edge under the pointer; drawn on: ground, band */
     --planned: #7C8A83; /* planned and candidate markers, dashed; drawn on: ground */
     --band: #E0DCD1; /* the drawing's alternate level band, decorative (the labels carry the level); the diagrams' clusters */

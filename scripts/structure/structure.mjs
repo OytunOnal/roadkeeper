@@ -14,12 +14,9 @@ import { readStructureFiles } from "./lib/disk-reads.mjs";
 import { diskFacts } from "./lib/disk-facts.mjs";
 import { stampFile, stampedText } from "./lib/stamp-file.mjs";
 import { sourceFiles } from "./lib/source-files.mjs";
-import { planFiles } from "./lib/plan-files.mjs";
 import { dependencyGraph, failure, foundNowhereLine, graphLine } from "./lib/dependency-graph.mjs";
 import { parsersFrom } from "./parsers/parsers.mjs";
 import { structureReport, undeclaredReport } from "./lib/structure-report.mjs";
-import { planCheckLines } from "./lib/slice-plan.mjs";
-import { planDrawLines } from "./lib/slice-plan-drawing.mjs";
 import { architectureTab } from "./architecture-tab/architecture-tab.mjs";
 
 // The structure report of the project at `root`: { declared, model, check, unread, lines, atop, diskUnread, failed }
@@ -73,9 +70,6 @@ export { globMatch } from "./lib/source-paths.mjs";
 // them, its own copy held to this one.
 export { SOURCE } from "./lib/source-paths.mjs";
 
-// The plan in the spec at `specPath`, drawn as mermaid on the structure at `root`: { lines, failed }.
-export const planDraw = (root, specPath) => planDrawLines(planFiles(root, specPath, null));
-
-// What was built at `root` against the plan in the spec at `specPath`, from the base structure.json at `basePath`, or
-// null when the slice adds structure.json: { lines, failed }.
-export const planCheck = (root, specPath, basePath) => planCheckLines(planFiles(root, specPath, basePath), basePath === null);
+// The plan's drawing and check, from the plan's module (plan/plan.mjs): `planDraw(root, specPath)` and
+// `planCheck(root, specPath, basePath)`, each { lines, failed }.
+export { planCheck, planDraw } from "./plan/plan.mjs";

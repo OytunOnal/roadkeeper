@@ -1,9 +1,7 @@
 // @level presentation
 // Roadkeeper — The Road's progress groups: Done, Now, Next and Ahead along the rail, drawn from the road model
-// (road-model.mjs), with no decisions of its own; and the eight helpers the page shares with them, the page's one date
-// format, a closed version's state, an issue's number linked, an issue's "#N title" linked, "ready to close" linked to
-// its line, an issue's Summary as the road shows it, the page's lead, made from the one-pager as a Summary is, and the
-// project's name as the one-pager says it.
+// (../../lib/road-model.mjs), with no decisions of its own, an issue's Summary as The Road reads it
+// (../../lib/issue-body.mjs), in the words the page's parts share (road-words.mjs).
 //
 // renderGroups(road, sizeStep) draws the four groups: Done, a group per closed milestone and then the issues closed
 // with no milestone; Now, the work in flight; Next, the rest of the current milestone; Ahead, a group per later
@@ -11,26 +9,12 @@
 //
 // Tracker text is a stranger's: every title and body is escaped.
 
-import { countInWords, cutAt, dateParts, esc, isCalendarDate, plural } from "../../_text.mjs";
-import { HEADING_LINE, cutInline, inline, listItems, markdownSubset, withLfEndings } from "./markdown-subset.mjs";
+import { countInWords, esc, plural } from "../../../_text.mjs";
+import { onOneLine, shownSummaryOf, summaryOf } from "../../lib/issue-body.mjs";
+import { dayOf } from "../../lib/road-model.mjs";
+import { inline, markdownSubset } from "./markdown-subset.mjs";
 import { closedLookOf, lookOf, lookWords, marker } from "./road-key.mjs";
-import { WAITS_ON, dayOf } from "./road-model.mjs";
-
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-
-// The page's one date format: `7 Sep 2026` for a day the calendar has; the text itself for a date-shaped string that is
-// not a day; "" for anything else. Dates inside quoted tracker text stay as written.
-export function longDate(iso) {
-  const p = dateParts(iso);
-  if (!p) return "";
-  return isCalendarDate(iso) ? `${p.d} ${MONTHS[p.m - 1]} ${p.y}` : String(iso);
-}
-
-// A closed version's state: its marker's word, released or closed, and "on" its close day, `day` (YYYY-MM-DD); the
-// word alone with no day.
-export const closeSaid = (markerWord, day) => (day ? `${markerWord} on ${longDate(day)}` : markerWord);
-
-// ------------------------------------------------------------------ the road
+import { READY_TO_CLOSE_LINK, closeSaid, issueRef, issueTitleLink, longDate } from "./road-words.mjs";
 
 // Past MORE_AT characters an issue's summary shows two lines and a "more" control opens the rest.
 const MORE_AT = 140;
@@ -38,101 +22,14 @@ const MORE_AT = 140;
 // a marker's line: its version and `noteHtml`, its state's word as HTML
 const stamp = (plan, version, noteHtml) => `<li class="stamp${plan ? " plan" : ""}"><div class="when"></div>${marker("bar", plan ? "stamp plan" : "stamp")}<div class="v">${esc(version)}${noteHtml ? ` <small>${noteHtml}</small>` : ""}</div></li>`;
 
-// "ready to close", linked to the bar's part, whose line says who closes the current milestone
-export const READY_TO_CLOSE_LINK = `<a href="#ready-to-close">ready to close</a>`;
-
 const tag = (cls, label) => `<span class="tag${cls ? " " + cls : ""}">${esc(label)}</span>`;
-
-// A stranger's text is cut to a cap (ROADKEEPER_STANDARDS.md, Security): an issue's summary, weighed or shown, stops at
-// SUMMARY_AT UTF-16 units.
-const SUMMARY_AT = 600;
-
-// The lead of an idea's first item, which the idea's title says (skills/idea/SKILL.md, Refine it).
-const IDEA_LEAD = /^\**What becomes possible\**:/;
-
-// The text a Summary is read from: a spec's, what follows its `## Problem Statement` heading, which /to-spec writes;
-// any other body whole.
-function readSummarySource(body) {
-  const lines = withLfEndings(body).split("\n");
-  const at = lines.findIndex((l) => {
-    const h = HEADING_LINE.exec(l);
-    return h && h[1] === "##" && h[2].trim() === "Problem Statement";
-  });
-  if (at < 0) return lines.join("\n");
-  return lines.slice(at + 1).join("\n");
-}
-
-// The lines of the first paragraph of a text that is not a heading's, nor the line naming what it waits on, which its
-// waiting chip says; none when there is none.
-function firstParagraph(text) {
-  for (const p of withLfEndings(text).split(/\n\s*\n/)) {
-    const lines = p.split("\n").filter((l) => !HEADING_LINE.test(l));
-    if (lines.join("").trim() && !WAITS_ON.test(lines.join("\n"))) return lines;
-  }
-  return [];
-}
-
-// The lines a Summary is made from: a body's first paragraph, a spec's under its Problem Statement.
-const readSummaryParagraph = (body) => firstParagraph(readSummarySource(body));
-
-const oneLine = (parts) => parts.join(" ").replace(/\s+/g, " ").trim();
-
-// A line ending on a colon, announcing what it does not show: its last sentence dropped while one comes before it,
-// else the colon made a full stop. A sentence ends at `.`, `!` or `?` and a space, so "v2.6.0" ends none.
-function dropClosingColon(line) {
-  if (!line.endsWith(":")) return line;
-  const ends = [...line.matchAll(/[.!?](?= )/g)];
-  return ends.length ? line.slice(0, ends[ends.length - 1].index + 1) : `${line.slice(0, -1)}.`;
-}
-
-// An issue's summary, what "more" is weighed against: its first paragraph on one line.
-const summaryOf = (body) => cutAt(oneLine(readSummaryParagraph(body)), SUMMARY_AT);
-
-// A paragraph's lines with a list opening them read as prose: its items one after another, the item led by "What
-// becomes possible:" left out unless no other is left, then the lines past the list; lines with no list as they are.
-function turnListToProse(lines) {
-  const list = listItems(lines);
-  if (!list) return lines;
-  const kept = list.items.filter((t) => !IDEA_LEAD.test(t.trim()));
-  return [...(kept.length ? kept : list.items), ...lines.slice(list.next)];
-}
-
-// A paragraph's lines as the road shows them: on one line, a list's items as prose; a line ending on a colon ends on a
-// sentence. Its cut splits no markup.
-const makeShownLine = (lines) => cutInline(dropClosingColon(oneLine(turnListToProse(lines))), SUMMARY_AT);
-
-// An issue's Summary as the road shows it: its first paragraph, a spec's under its Problem Statement, made a shown line.
-const shownSummaryOf =(body) => makeShownLine(readSummaryParagraph(body));
-
-// The page's lead as the road shows it: the one-pager's first paragraph, a Problem Statement heading read as any
-// heading, made a shown line as a Summary is.
-export const shownLeadOf = (onePager) => makeShownLine(firstParagraph(onePager));
-
-// The project's name as its one-pager says it: the words of the heading the text opens on, cut as a Summary is; ""
-// with no text, or a text opening on anything but a heading.
-export function onePagerName(text) {
-  const first = withLfEndings(text || "").replace(/^\ufeff/, "").split("\n").find((l) => l.trim());
-  const m = /^ {0,3}#{1,6}[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$/.exec(first || "");
-  return m ? cutAt(m[1].replace(/\s+/g, " ").trim(), SUMMARY_AT) : "";
-}
-
-// A link to issue `i`, which has a URL, holding `inner`, with the class `cls` when one is given.
-const issueAnchor = (i, inner, cls) => `<a${cls ? ` class="${cls}"` : ""} href="${esc(i.url)}" rel="noopener">${inner}</a>`;
-
-export const issueRef = (i) => (i.url ? issueAnchor(i, `#${i.number}`) : `#${i.number}`);
-
-// An issue named "#N title", one link to it: a screen reader hears one link; the number keeps the link's look, the
-// title its own colour. A link in the title stays text, as one cannot nest in another.
-export const issueTitleLink = (i) => (i.url
-  ? issueAnchor(i, `<span class="number">#${i.number}</span> <span class="title">${inline(i.title, { links: false })}</span>`, "issue")
-  : `${issueRef(i)} ${inline(i.title)}`);
 
 // What "more" opens: the whole body, a spec's tickets and the comments. Empty when there is nothing past the summary,
 // or when the size step leaves detail out (the last attempt).
 function issueDetail(i, sizeStep) {
   if (!sizeStep.detail) return "";
   const summary = summaryOf(i.body);
-  const rest = String(i.body || "").replace(/\s+/g, " ").trim().length > summary.length;
+  const rest = onOneLine(i.body || "").length > summary.length;
   if (!rest && !i.comments.length && !i.tickets.length && summary.length <= MORE_AT) return "";
   const tickets = i.tickets.map((t) => `<li>${issueRef(t)} ${inline(t.title)}</li>`).join("");
   const comments = i.comments.map((c) => `<div class="comment"><p class="s">${esc(c.author || "someone")}${c.createdAt ? ` · ${esc(longDate(dayOf(c.createdAt)))}` : ""}</p>${markdownSubset(c.body, 5)}</div>`).join("");
@@ -238,10 +135,20 @@ function renderDoneGroup(road, sizeStep) {
   return groups ? groupBox(head, groups) : groupOf(head, emptyRail("Nothing closed yet"));
 }
 
+// Now's count by what holds its cards (the model's `held`), each part said with its verb, a zero part left out; none
+// at all, "nothing being worked on".
+function sayNowCount({ working, waitingOnYou, waitingElsewhere }) {
+  const parts = [];
+  if (working) parts.push(`${working} being worked on`);
+  if (waitingOnYou) parts.push(`${plural(waitingOnYou, "waits", "wait")} on your word`);
+  if (waitingElsewhere) parts.push(`${plural(waitingElsewhere, "waits", "wait")} on something else first`);
+  return parts.join(" · ") || "nothing being worked on";
+}
+
 // Now: the work in flight, each issue on a milestone tagged with its version.
 function renderNowGroup(road, sizeStep) {
   const now = road.now;
-  return groupOf({ id: "now", title: "Now", count: `${countInWords(now.inFlight, "none")} in flight` }, now.issues.map((i) => issueNode(i, sizeStep, true)).join("") || emptyRail("Nothing in flight"));
+  return groupOf({ id: "now", title: "Now", count: sayNowCount(now.held) }, now.issues.map((i) => issueNode(i, sizeStep, true)).join("") || emptyRail("Nothing being worked on"));
 }
 
 // Next — vX — <name>, or "Next — vX · ready to close" once it is: the current milestone's issues not in flight, closed
@@ -250,7 +157,7 @@ function renderNowGroup(road, sizeStep) {
 function renderNextGroup(road, sizeStep) {
   const { milestone: m, issues, inFlight } = road.next;
   if (!m) return groupOf({ id: "next", title: "Next", count: "no open milestone" }, emptyRail("No open milestone"));
-  const empty = emptyRail(inFlight ? "All in flight: its issues are in Now." : "No issues on it yet.");
+  const empty = emptyRail(inFlight ? "All its issues are in Now." : "No issues on it yet.");
   const rows = issues.length ? issues.map((i) => issueNode(i, sizeStep)).join("") : empty;
   const nextStamp = m.readyToClose ? milestoneStamp(m, READY_TO_CLOSE_LINK) : milestoneStamp(m);
   const title = m.readyToClose ? `Next — ${m.version} · ready to close` : `Next — ${m.heading}`;
@@ -265,13 +172,17 @@ function groupInAhead(a, sizeStep) {
   return groupOf(head, a.issues.map((i) => issueNode(i, sizeStep)).join("") + milestoneStamp(m));
 }
 
-// Ahead: a group per later milestone, then the issues with no milestone yet under their divider, each "not placed".
+// A candidate's tag: a bug's says so, among the ideas; any other none.
+const tagCandidate = (i) => (i.labels.includes("bug") ? tag("bug", "bug") : "");
+
+// Ahead: a group per later milestone, then the issues with no milestone yet under their divider, each "not placed", a
+// bug tagged.
 function renderAheadGroup(road, sizeStep) {
   const ahead = road.ahead;
   const head = { id: "ahead", title: "Ahead", count: `${countInWords(ahead.count, "no issues", "issue")} on later milestones · ${countInWords(ahead.later.length, "none")} with no milestone yet` };
   const groups = ahead.milestones.map((a) => groupInAhead(a, sizeStep)).join("");
   const later = ahead.later.length
-    ? `<ol class="rail"><li class="divider"><div class="when"></div><div></div><div class="t">No milestone yet</div></li>${ahead.later.map((i) => issueSlice(i, { cls: "cand", whenHtml: "not placed", tag: "" }, sizeStep)).join("")}</ol>`
+    ? `<ol class="rail"><li class="divider"><div class="when"></div><div></div><div class="t">No milestone yet</div></li>${ahead.later.map((i) => issueSlice(i, { cls: "cand", whenHtml: "not placed", tag: tagCandidate(i) }, sizeStep)).join("")}</ol>`
     : "";
   if (!groups && !later) return groupOf(head, emptyRail("Nothing planned beyond the open milestone"));
   return groupBox(head, groups + later);

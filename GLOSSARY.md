@@ -178,6 +178,10 @@ _Avoid_: top-level file, interface file
 Of a file: it names more than one level. A violation; a deep module whose files hold different levels is not.
 _Avoid_: multi-level file, spanning file
 
+**Tests mirror**:
+A line of a structured project's rules saying a tests folder holds a code folder's suites at the same paths; the structure check rules a test there as inside the module at its path.
+_Avoid_: test root, test tree (the green's word is Tested tree); "mirror" for the public copy
+
 **Ruling**:
 What the structure check says about one dependency between two files; its kinds are the rulings the structure check prints.
 _Avoid_: verdict (the inventory's), judgement (a grade), mark

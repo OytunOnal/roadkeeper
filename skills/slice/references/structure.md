@@ -40,7 +40,7 @@ Copy this into the project, and keep its comments.
 - Dependencies point inward: a file depends on its own level or an inner one. A file of mixed levels counts as its outermost.
 - Two levels on the same ring never depend on each other.
 - A file names one level; a deep module may hold several.
-- Code and tests reach a deep module only through its entry; what is inside it, inner modules too, is private.
+- Code reaches a deep module only through its entry; what is inside it, inner modules too, is private. A test past the entry is a judgement the review weighs.
 - Deep modules nested in one parent, and top deep modules, never depend on each other in a cycle.
 - An exception never hides a cycle.
 
@@ -51,7 +51,7 @@ Copy this into the project, and keep its comments.
 - `src/db` — two entries until the split (v0.6)
 
 ## Tests
-<!-- test file patterns: * within a folder, ** across folders -->
+<!-- test file patterns: * within a folder, ** across folders; - `tests/` mirrors `src/` says a tests folder holds a code folder's suites at the same paths, so a test there is inside the module at its path; under several, the longer tests folder first, then the first whose path lands in a module -->
 - `**/*.test.ts`
 
 ## Ignore
@@ -76,6 +76,7 @@ Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/structure-check.mjs` in the project root
 - a file of mixed levels;
 - a dependency that points outward;
 - an import into a deep module past its entry;
+- a test past a deep module's entry, a judgement: printed, and the check still passes;
 - a cycle between modules;
 - a level named like a module's folder;
 - debt still covered by exceptions;

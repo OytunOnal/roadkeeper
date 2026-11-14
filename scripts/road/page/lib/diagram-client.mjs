@@ -1,6 +1,6 @@
 // @level presentation
 // Roadkeeper — The Road's diagram client: the diagrams, drawn dark or light in the page's tokens. The page embeds each
-// function here by its own source (road-html.mjs), in one scope with the road client's (road-client.mjs), whose
+// function here by its own source (../page.mjs), in one scope with the road client's (road-client.mjs), whose
 // functions decide whether the diagrams draw dark and their theme from the tokens' values; it imports nothing.
 
 // After load, any mermaid block still holding text and no <svg> pulls the renderer from cdnjs: the one script host the

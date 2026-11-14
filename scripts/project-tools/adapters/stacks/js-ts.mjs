@@ -3,12 +3,14 @@
 // `{out}` (Vitest's junit reporter, Node's runner's), through junit-results.mjs. A case's file is its testcase's
 // `file` (Node's runner), made relative to the tree; else its classname or its outermost testsuite's name, when that is
 // a file the run was given (Vitest); else none. Its id is the names of the testsuites around it, but the one naming its
-// file, and its own, joined by " > ". The install is node_modules. The check at write reads ESLint's JSON report
+// file, and its own, joined by " > ". A file Node's runner could not load, its case saying only "test failed", takes its
+// cause from the run's output (load-cause.mjs). The install is node_modules. The check at write reads ESLint's JSON report
 // (`--format json`) from its lint run's output.
 
 import { eslintNumbers } from "../../../_eslint-numbers.mjs";
 import { caseFromTestcase, readResultsCases } from "./junit-results.mjs";
 import { isUnusedName } from "./lint-message.mjs";
+import { withLoadCause } from "./load-cause.mjs";
 
 // A JUnit testcase as a case of the run that was given `files`.
 function readCase(raw, files) {
@@ -19,9 +21,10 @@ function readCase(raw, files) {
 }
 
 // The cases of a run given `files` in the tree at `root`, read from its JUnit file at `results`: none when it wrote none.
-function readRunCases({ root, files, results }) {
+// A file Node's runner could not load takes its cause from the run's `output` (load-cause.mjs).
+function readRunCases({ root, files, output, results }) {
   const given = new Set(files);
-  return readResultsCases({ root, results }).map((raw) => readCase(raw, given));
+  return readResultsCases({ root, results }).map((raw) => withLoadCause(readCase(raw, given), { output, files }));
 }
 
 // ESLint's JSON report in a lint run's output: the output whole, else its one line holding it (a warning on stderr

@@ -9,11 +9,12 @@ import {
   BOARD, FOLD_LABEL, WAITING_LABEL, closingTally, inFlight, inFlightWaitingOnYou, inVersionOrder, isCounted, isFold, isKeptRealUse, isTicket,
   isWaiting, lastVersion, openByVersion, realUseOf, sliceOf, slicesIn, specOf, titleParts,
 } from "../../_milestones.mjs";
-import { cutAt, daysBetween, isCalendarDate, readerLines, versionNumbers } from "../../_text.mjs";
+import { cutAt, daysBetween, escapeForPattern, isCalendarDate, versionNumbers } from "../../_text.mjs";
+import { betOf, waitsOnLineOf } from "./issue-body.mjs";
 
 const WAIT_DAYS = 7; // a waiting-on-you issue open longer than a week is late: The Road's strip and the nudge say it
-const CANDIDATE_SCAN = 2000; // characters of a body scanned for its bet
 const ANSWERED = 50;         // the answered waiting-on-you issues kept, latest first
+const MAX_FLAG_LINE = 200;   // characters of a Waits on line a flag quotes
 // A tracker filter's part leaving out folds, waiting-on-you issues and tickets: what no count holds, but a waiting
 // issue in flight, which counts on its milestone and is left out all the same. The tracker's search finds a folded
 // issue by its label alone, closed or open.
@@ -27,6 +28,8 @@ const STATE_FAMILIES = [
 const has = (i, label) => i.labels.includes(label);
 const isOpen = (i) => i.state === "OPEN";
 const byNumber = (a, b) => a.number - b.number;
+// a candidate: an issue with no milestone (GLOSSARY, Candidate), of any kind, a bug too
+const isCandidate = (i) => !i.milestone;
 const byClosed = (a, b) => String(a.closedAt || "").localeCompare(String(b.closedAt || "")) || byNumber(a, b);
 // the furthest board label an issue carries, or null
 const boardOf = (i) => (BOARD.find((b) => has(i, b.label)) || { label: null }).label;
@@ -35,29 +38,8 @@ const boardOf = (i) => (BOARD.find((b) => has(i, b.label)) || { label: null }).l
 const boardRank = (i) => { const at = BOARD.findIndex((b) => b.label === i.board); return at < 0 ? BOARD.length : at; };
 const alongRail = (issues) => issues.slice().sort((a, b) => boardRank(a) - boardRank(b) || byNumber(a, b));
 
-// The bet an issue rests on: the text after `Bet:` in its body, to the end of that paragraph.
-function betOf(body) {
-  const scan = cutAt(String(body || ""), CANDIDATE_SCAN);
-  const m = /\*{0,2}bet\*{0,2}:\*{0,2}[ \t]*/i.exec(scan);
-  if (!m) return null;
-  const rest = scan.slice(m.index + m[0].length);
-  const end = rest.search(/\n\s*\n/);
-  return (end >= 0 ? rest.slice(0, end) : rest).replace(/\s+/g, " ").trim().replace(/[*\s]+$/, "") || null;
-}
-
-// the lead of the paragraph a real-use issue names what it waits on with (skills/slice/SKILL.md, step 10, Later use)
-export const WAITS_ON = /^\s*\*\*Waits on:\*\*[ \t]*/i;
-
-// The line an issue's body names what it waits on with: its last paragraph after `**Waits on:**`, on one line, its last
-// full stop dropped; "" with none.
-function waitsOnLineOf(body) {
-  const paragraphs = readerLines(body).join("\n").split(/\n\s*\n/).filter((p) => p.trim());
-  const last = paragraphs[paragraphs.length - 1] || "";
-  return WAITS_ON.test(last) ? last.replace(WAITS_ON, "").replace(/\s+/g, " ").trim().replace(/\.$/, "") : "";
-}
-
-// What issue `i` says it waits on: its line (waitsOnLineOf) and `refs`, the issues of `known` (number to address) the
-// line names as `#N`; null with no line.
+// What issue `i` says it waits on: its line (issue-body.mjs, waitsOnLineOf) and `refs`, the issues of `known` (number
+// to address) the line names as `#N`; null with no line.
 function waitsOnOf(i, known) {
   const line = waitsOnLineOf(i.body);
   if (!line) return null;
@@ -125,9 +107,10 @@ const refOf = (i) => ({ number: i.number, url: i.url });
 // the day an ISO timestamp falls on, as written (`2026-09-20T10:00:00Z` → `2026-09-20`), or "" for none
 export const dayOf = (x) => (x ? x.slice(0, 10) : "");
 
-// the day an issue's wait counts from: for work in flight wearing waiting-on-you, the day the label was last added;
-// else, or with that day unread, its creation, else the day Roadkeeper first saw it, else ""
-const startOf = (i) => (inFlightWaitingOnYou(i) && dayOf(i.waitingSince)) || dayOf(i.createdAt) || dayOf(i.seenAt);
+// the day an issue's wait counts from: for work in flight wearing waiting-on-you, the day the label was last added,
+// "" with that day unread (its timeline came back without it: no age is claimed); else its creation, else the day
+// Roadkeeper first saw it, else ""
+const startOf = (i) => (inFlightWaitingOnYou(i) ? dayOf(i.waitingSince) : dayOf(i.createdAt) || dayOf(i.seenAt));
 
 // whole days a waiting-on-you issue has been open, or null, and whether that is late
 function ageOf(i, today) {
@@ -165,12 +148,31 @@ function silentRealUseOf(i, milestones) {
   return silent && ofClosed ? { version: drawnVersion(m.title), marker: markerOf(m), closed: dayOf(m.closedAt) } : null;
 }
 
+// The pattern finding `version` whole in a line: "v3.0" in "v3.0's release", never in "v3.0.1" or "xv3.0"; null with
+// no version.
+const matchVersion = (version) => (version ? new RegExp(`(?<![\\w.])${escapeForPattern(version)}(?!\\w|\\.\\d)`, "i") : null);
+
+// An open issue whose `**Waits on:**` line names a closed milestone's version, the first to close: what it waits on
+// has come. Its line, cut, the version, the marker's word and the close day; else null. `closed`, the closed
+// milestones in the order they closed, each { m, pattern } (matchVersion of its version).
+function staleWaitsOnOf(i, closed) {
+  const line = isOpen(i) ? waitsOnLineOf(i.body) : "";
+  const found = line ? closed.find((c) => c.pattern && c.pattern.test(line)) : null;
+  if (!found) return null;
+  const m = found.m;
+  return { line: cutAt(line, MAX_FLAG_LINE), version: drawnVersion(m.title), marker: markerOf(m), closed: dayOf(m.closedAt) };
+}
+
 function flagsOf(snap) {
   const flags = [];
   const milestones = new Map(snap.milestones.map((m) => [m.number, m]));
+  const closed = snap.milestones.filter((m) => m.state === "closed").sort(byClosed)
+    .map((m) => ({ m, pattern: matchVersion(titleParts(m.title).version) }));
   for (const i of snap.issues.filter((x) => !isFold(x))) {
     const silent = silentRealUseOf(i, milestones);
     if (silent) flags.push({ issue: i, kind: "silent-real-use", ...silent });
+    const stale = staleWaitsOnOf(i, closed);
+    if (stale) flags.push({ issue: i, kind: "stale-waits-on", ...stale });
     for (const family of STATE_FAMILIES) {
       const on = family.filter((l) => has(i, l));
       if (on.length > 1) flags.push({ issue: i, kind: "family", labels: on });
@@ -233,6 +235,14 @@ function progressOf(current, work) {
   return { milestone: current, filled, realUsesOpen, link };
 }
 
+// Now: the work in flight drawn, along the rail, `inFlight` how many, and `held`, how many by what holds each: worked
+// on, waiting on the owner's word (`waitsOnYou`), or on something else first (`waitsOn`, its line).
+function nowOf(flying) {
+  const waitingOnYou = flying.filter((i) => i.waitsOnYou).length, waitingElsewhere = flying.filter((i) => i.waitsOn).length;
+  const working = flying.length - waitingOnYou - waitingElsewhere;
+  return { issues: alongRail(flying), inFlight: flying.length, held: { working, waitingOnYou, waitingElsewhere } };
+}
+
 // The last issue closed real-green, null with none: its day, the days since, its number and address, and `more`, the
 // others closed real-green that day.
 function realGreenOf(work, today) {
@@ -257,23 +267,24 @@ function countersOf(road, today) {
   };
 }
 
-// Each counter's issues as a tracker filter: `state`, `labelsIn`, `labelsOut`, `milestone` (a title, or false for
-// none) and `parent` (false for none); a field left out filters nothing.
+// Each tracker counter's issues as a tracker filter: `state`, `labelsIn`, `labelsOut`, `milestone` (a title, or false
+// for none) and `parent` (false for none); a field left out filters nothing. The waiting count has none: no tracker
+// search reads a body's last paragraph, so its cards are the page's own tab.
 function filtersOf() {
   const flying = BOARD.filter((b) => b.inFlight).map((b) => b.label);
   return {
     realGreen: { state: "closed", labelsIn: ["real-green"], ...OFF_ROAD },
-    waiting: { state: "open", labelsIn: [WAITING_LABEL] },
-    candidates: { state: "open", labelsIn: ["enhancement"], milestone: false, labelsOut: [...flying, WAITING_LABEL].sort(), parent: false },
+    candidates: { state: "open", milestone: false, labelsOut: [...flying, WAITING_LABEL].sort(), parent: false },
   };
 }
 
-// The open issues the bets are drawn from, each with its version, null for one with no milestone: every open issue on
-// an open milestone, then the work in flight with no milestone, then every candidate.
-function gatherBetPool({ ms, issuesOf, flyingNoMilestone, later }) {
+// The open issues the bets are drawn from, every one the road draws, each with its version, null for one with no
+// milestone: every open issue on an open milestone, then the work in flight on none or on a closed one, then every
+// candidate.
+function gatherBetPool({ ms, issuesOf, flyingElsewhere, later }) {
   return [
     ...ms.open.flatMap((m) => issuesOf(m).filter(isOpen).map((issue) => ({ issue, version: m.version }))),
-    ...[...flyingNoMilestone, ...later].map((issue) => ({ issue, version: null })),
+    ...[...flyingElsewhere, ...later].map((issue) => ({ issue, version: issue.version })),
   ];
 }
 
@@ -310,7 +321,6 @@ export function roadModel(snap, today, sources) {
     const on = drawnIssues.filter((i) => i.milestone === m.number);
     return [...on.filter((i) => !isOpen(i)).sort(byClosed), ...alongRail(on.filter(queued))];
   };
-  const isCandidate = (i) => !i.milestone && has(i, "enhancement");
   const later = drawnIssues.filter((i) => isCandidate(i) && queued(i)).sort(byNumber);
   const ahead = ms.open.slice(1).map((milestone, at) => ({ milestone, issues: drawnUnder(milestone), open: at === 0 }));
   const waitingOpen = waiting.filter(isOpen).sort(byWait).map((i) => ({ ...i, ...ageOf(i, today) }));
@@ -322,13 +332,13 @@ export function roadModel(snap, today, sources) {
     milestones: ms,
     progress: progressOf(current, work),
     done: doneOf(drawnIssues, ms),
-    now: { issues: alongRail(flying), inFlight: flying.length },
+    now: nowOf(flying),
     next: { milestone: current, issues: current ? drawnUnder(current) : [], inFlight: current ? flying.filter((i) => i.milestone === current.number).length : 0 },
     ahead: { milestones: ahead, count: ahead.reduce((n, a) => n + a.issues.length, 0), later },
     waiting: { open: todays, setAside, answered: waiting.filter((i) => i.state === "CLOSED").sort(byClosed).reverse().slice(0, ANSWERED), lateAfterDays: WAIT_DAYS },
     untriaged: snap.issues.filter((i) => isOpen(i) && (i.labels.length === 0 || has(i, "needs-triage"))).sort(byNumber),
     flags: flagsOf(snap),
-    ...betsOf(gatherBetPool({ ms, issuesOf, flyingNoMilestone: alongRail(flying.filter((i) => !i.milestone)), later })),
+    ...betsOf(gatherBetPool({ ms, issuesOf, flyingElsewhere: alongRail(flying.filter((i) => !ms.open.some((m) => m.number === i.milestone))), later })),
     counters: countersOf({ ms, work, todays, later }, today),
     due: dueOf(sources.metrics, today),
   };

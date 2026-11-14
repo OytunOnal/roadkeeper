@@ -7,17 +7,26 @@
 // git's list of files finds them as in a checkout. Each sibling today's package.json names (siblings.mjs) is linked
 // beside the tree where it lies beside the main checkout, the tree laid at the main checkout's place as deep as they
 // need. A link the tools make is removed before the folder is, and a folder still holding one is left whole, and said.
+// Each git call laying out the commit is bounded at git's own bound and LAYOUT_PER_FILE a file of the commit, counted at
+// git's own bound; a refusal names the step that stopped: a git call, with its bound when it ran out, the tree's folder
+// or a copied file.
 
 import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isPlainDir, lexists } from "../../_files.mjs";
-import { git } from "../../_git.mjs";
+import { GIT_TIMEOUT, git, gitWithin } from "../../_git.mjs";
 import { controlsReplaced, cutAt } from "../../_text.mjs";
 import { siblingsOf } from "./siblings.mjs";
 import { isLink, linkFolder } from "./worktree.mjs";
 
 const NAME_SHOWN = 200; // characters of a refused file's name shown
+// milliseconds each file of the commit adds to a layout call's bound: three times the slowest call measured laying out
+// Roadkeeper's own tree, `git add -A` at about 6.5 ms a file
+const LAYOUT_PER_FILE = 20;
+
+// One of the layout's steps stopped: its message says the step, and a git call's bound when it ran out.
+class LayoutStopped extends Error {}
 
 // a NUL-separated list of git's, as its entries
 const entries = (out) => out.split("\0").filter(Boolean);
@@ -90,26 +99,49 @@ function scratchFolders(prefix, { main, top }) {
   return { folder, around, tree, results: join(folder, "results"), index: join(folder, "index") };
 }
 
+// `step()`'s result; when it throws, LayoutStopped with `said(error)`.
+function layoutStep(step, said) {
+  try { return step(); } catch (e) { throw new LayoutStopped(said(e)); }
+}
+
+// What stopped the git call `name` bounded at `bound` milliseconds: its bound when it ran out, else that it failed.
+const gitStopped = (name, bound, error) =>
+  (error?.code === "ETIMEDOUT" ? `${name} took longer than its ${Math.round(bound / 1000)} s` : `${name} failed`);
+
+// One git call laying out the commit, in `cwd`, ended after `bound` milliseconds (layoutStep, gitStopped). `call`:
+// { own, bound }, `own` gitWithin's.
+const layoutCall = (args, cwd, { own, bound }) =>
+  layoutStep(() => gitWithin(args, cwd, { own, timeout: bound }), (e) => gitStopped(`git ${args[0]}`, bound, e));
+
+// The working tree's file `f` copied over the tree's, the folders holding it made first.
+function copiedIn(root, tree, f) {
+  mkdirSync(dirname(join(tree, f)), { recursive: true });
+  copyFileSync(join(root, f), join(tree, f));
+}
+
 // The commit's files checked out into the tree; the working tree's `copied` files copied in over them; the tree made a
 // repository, its files in its index; then the install folder `install` (null: none) linked in from the checkout
-// `installFrom` (null: none), the worktree's own install or its main checkout's. `plan`: { hash, tree, index, copied,
-// install, installFrom }, `index` git's temporary index. Whether it was laid out.
+// `installFrom` (null: none), the worktree's own install or its main checkout's. Each git call is bounded at
+// GIT_TIMEOUT and LAYOUT_PER_FILE a file of the commit. `plan`: { hash, tree, index, copied, install, installFrom },
+// `index` git's temporary index. Null once laid out; else the step that stopped it (LayoutStopped's message).
 function layTree(root, plan) {
   const { hash, tree, copied, install, installFrom } = plan;
-  const env = { GIT_INDEX_FILE: plan.index };
+  const own = { GIT_INDEX_FILE: plan.index };
   try {
-    mkdirSync(tree, { recursive: true });
-    git(["read-tree", hash], root, env);
-    git(["checkout-index", "-a", "-f", `--prefix=${tree.split(sep).join("/")}/`], root, env);
-    for (const f of copied) {
-      mkdirSync(dirname(join(tree, f)), { recursive: true });
-      copyFileSync(join(root, f), join(tree, f));
-    }
-    git(["init", "-q"], tree);
-    git(["add", "-A"], tree);
+    const files = layoutStep(() => commitFiles(root, hash).length, (e) => gitStopped("git ls-tree", GIT_TIMEOUT, e));
+    const bound = GIT_TIMEOUT + LAYOUT_PER_FILE * files;
+    layoutStep(() => mkdirSync(tree, { recursive: true }), () => "the tree's folder could not be made");
+    layoutCall(["read-tree", hash], root, { own, bound });
+    layoutCall(["checkout-index", "-a", "-f", `--prefix=${tree.split(sep).join("/")}/`], root, { own, bound });
+    for (const f of copied) layoutStep(() => copiedIn(root, tree, f), () => `${shownName(f)} could not be copied in`);
+    layoutCall(["init", "-q"], tree, { bound });
+    layoutCall(["add", "-A"], tree, { bound });
     if (install && installFrom) linkFolder(tree, installFrom, install);
-    return true;
-  } catch { return false; }
+    return null;
+  } catch (e) {
+    if (e instanceof LayoutStopped) return e.message;
+    throw e;
+  }
 }
 
 // The sibling at `place`, its path from `top`, linked beside the tree at the same path in `around` (linkFolder), the
@@ -150,11 +182,12 @@ function removeScratch(scratch, links) {
 export async function inCommitTree({ root, label, plan }, say, body) {
   const siblings = siblingsOf(root);
   const scratch = scratchFolders(`roadkeeper-${label}-`, siblings);
-  const laidOut = layTree(root, { ...plan, tree: scratch.tree, index: scratch.index });
+  const stopped = layTree(root, { ...plan, tree: scratch.tree, index: scratch.index });
+  const laidOut = stopped === null;
   const laid = laidOut ? linkedSiblings(scratch, siblings) : { lines: [], links: [] };
   const links = [...(plan.install ? [join(scratch.tree, plan.install)] : []), ...laid.links];
   try {
-    if (!laidOut) { say(`${label}: no tree built: git could not lay out the commit`); return 2; }
+    if (!laidOut) { say(`${label}: no tree built: git could not lay out the commit: ${stopped}`); return 2; }
     for (const line of laid.lines) say(`${label}: ${line}`);
     return await body(scratch);
   } finally {

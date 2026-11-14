@@ -1,7 +1,8 @@
 // @level infrastructure
 // Roadkeeper — the tracker: read through `gh`, cleaned into one snapshot shape, kept in docs/roadkeeper/issues.json; its
 // milestones renamed through `gh`. A read takes the issues, their parents, the milestones, and the timeline of each open
-// issue in flight wearing `waiting-on-you`, for the day the label was last added.
+// issue in flight wearing `waiting-on-you`, for the day the label was last added. A list of issues or milestones that
+// came back incomplete fails the read (checkWhole); a timeline that did leaves that issue's day unread.
 //
 // One snapshot rule: offline, after `gh` fails, and for the previous read that dates `seenAt`, the tree's own snapshot
 // is read, else, in a linked worktree, its main checkout's (scripts/_git.mjs); a live read writes the tree's own,
@@ -57,10 +58,12 @@ const NO_ANSWER = /\bHTTP 5\d\d\b|error connecting to|dial tcp|no such host|conn
 // exceeded"; gh's own "GitHub API rate limit exceeded" and "rate limited"
 const RATE_LIMITED = /\bHTTP 429\b|\brate limit(?:ed)?\b/i;
 
-// The kind of a failed read (FAILURE_KIND), from what `gh` threw: not signed in, gh missing (no program to run), rate
-// limited, no answer (a server's error answer, a failed connection, a timeout), or other.
+// The kind of a failed read (FAILURE_KIND): the kind an incomplete list was thrown with (incomplete); else, from what
+// `gh` threw, not signed in, gh missing (no program to run), rate limited, no answer (a server's error answer, a failed
+// connection, a timeout), or other.
 function classifyFailure(error) {
   const thrown = error || {};
+  if (Object.values(FAILURE_KIND).includes(thrown.kind)) return thrown.kind;
   const said = `${thrown.stderr || ""}\n${thrown.message || ""}`;
   if (thrown.status === GH_AUTH_EXIT || SIGNED_OUT.test(said)) return FAILURE_KIND.notSignedIn;
   if (thrown.code === "ENOENT") return FAILURE_KIND.ghMissing;
@@ -72,10 +75,12 @@ const PER_PAGE = 100; // the most a REST list gives in one page
 const MAX_EVENTS = 1000; // events of an issue's timeline read, ten pages
 
 // The last time `waiting-on-you` was added to issue `n`, from its timeline's `labeled` events read by `upTo`, or null
-// when the read fails or finds none: its wait then counts from its creation. A page served short reads as the end.
+// when the read fails or finds none: its card then claims no age (road-model.mjs). A page served short reads as the
+// end; one cut short that still holds an older `labeled` event cannot be told from a whole one, and that older day is
+// taken: nothing GitHub sends tells them apart.
 function labelledWaitingOn(upTo, name, n) {
   try {
-    const added = upTo(`repos/${name}/issues/${n}/timeline`, MAX_EVENTS)
+    const added = upTo(`repos/${name}/issues/${n}/timeline`, MAX_EVENTS).items
       .filter((e) => e && e.event === "labeled" && e.label && e.label.name === WAITING_LABEL)
       .map((e) => iso(e.created_at)).filter(Boolean).sort();
     return added.length ? added[added.length - 1] : null;
@@ -96,6 +101,28 @@ function parentOf(url, name) {
   return m && m[1].toLowerCase() === name.toLowerCase() ? Number(m[2]) : null;
 }
 
+// An incomplete list's failure: the read fails as `gh` failing does, its kind (FAILURE_KIND) and its line said.
+const makeIncompleteError = (kind, said) => Object.assign(new Error(said), { kind });
+
+// Throws when a REST list came back incomplete: `restIssues`, the list of issues, ending short of its cap without an
+// issue `gh issue list` gave; `milestones`, the list of milestones, short of its cap without a milestone an issue names.
+// A list cut at its cap is whole as far as the snapshot reads (MAX_ISSUES, MAX_MILESTONES). Each list { items, capped }.
+function checkWhole(issues, restIssues, milestones) {
+  const numberOf = (x) => int(x && x.number);
+  const lacks = (list, n) => !list.capped && !list.items.some((x) => numberOf(x) === n);
+  const listed = issues.map(numberOf).filter(Boolean);
+  const lacked = listed.filter((n) => lacks(restIssues, n));
+  if (lacked.length) {
+    throw makeIncompleteError(FAILURE_KIND.incompleteIssues,
+      `GitHub's list of issues lacks ${lacked.length} of the ${listed.length} issues gh listed, #${Math.min(...lacked)} first`);
+  }
+  const named = issues.find((i) => i && numberOf(i.milestone) && lacks(milestones, numberOf(i.milestone)));
+  if (named) {
+    throw makeIncompleteError(FAILURE_KIND.incompleteMilestones,
+      `GitHub's list of milestones lacks milestone ${numberOf(named.milestone)}, which #${numberOf(named)} names`);
+  }
+}
+
 // the tracker as `gh` returns it, before any cleaning, each issue with its parent and its `waitingSince`
 // (waitingSinceOf); each call is given what is left of the read's time
 function fetchTracker(root, until, run) {
@@ -109,7 +136,8 @@ function fetchTracker(root, until, run) {
   const repo = JSON.parse(call(["repo", "view", "--json", "nameWithOwner,url"]));
   const name = String(repo.nameWithOwner || "");
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(name)) throw new Error(`gh named no repository: ${cutAt(name, 80)}`);
-  // a REST list read page by page until a short page or the cap: a tracker larger than the snapshot is never fetched whole
+  // A REST list read page by page until a short page or the cap: a tracker larger than the snapshot is never fetched
+  // whole. { items, capped }: what was read, and whether the read stopped at the cap.
   const upTo = (endpoint, cap) => {
     const items = [];
     for (let page = 1; items.length < cap; page++) {
@@ -119,16 +147,18 @@ function fetchTracker(root, until, run) {
       items.push(...got);
       if (got.length < PER_PAGE) break;
     }
-    return items.slice(0, cap);
+    return { items: items.slice(0, cap), capped: items.length >= cap };
   };
   const issues = list(JSON.parse(call(["issue", "list", "--state", "all", "--limit", String(MAX_ISSUES),
     "--json", "number,title,state,stateReason,labels,milestone,body,url,createdAt,closedAt,comments"])));
   // `gh issue list` gives no parent; the REST list does, its pull requests counted against the cap too
-  const parents = new Map(upTo(`repos/${name}/issues?state=all`, MAX_ISSUES).map((i) => [i && i.number, parentOf(i && i.parent_issue_url, name)]));
+  const restIssues = upTo(`repos/${name}/issues?state=all`, MAX_ISSUES);
   const milestones = upTo(`repos/${name}/milestones?state=all`, MAX_MILESTONES);
+  checkWhole(issues, restIssues, milestones);
+  const parents = new Map(restIssues.items.map((i) => [i && i.number, parentOf(i && i.parent_issue_url, name)]));
   const since = waitingSinceOf(issues, upTo, name);
   const shaped = issues.map((i) => ({ ...i, parent: parents.get(i && i.number) || null, waitingSince: since.get(i && i.number) || null }));
-  return { fetched, repo: name, url: repo.url, issues: shaped, milestones };
+  return { fetched, repo: name, url: repo.url, issues: shaped, milestones: milestones.items };
 }
 
 const str = (x, n) => (typeof x === "string" ? cutAt(x, n) : "");

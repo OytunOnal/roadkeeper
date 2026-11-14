@@ -10,7 +10,7 @@ import { execFileSync } from "node:child_process";
 import { accessSync, constants, statSync } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 
-const GIT_TIMEOUT = 10000;     // milliseconds one `git` call may take
+export const GIT_TIMEOUT = 10000; // milliseconds one `git` call may take, unless its caller bounds it (gitWithin)
 const MAX_PATH_FOLDERS = 1000; // PATH folders looked in for a program
 export const OBJECT_HASH = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/; // a full SHA-1 or SHA-256 object name, nothing else
 
@@ -30,18 +30,23 @@ export function findProgram(name, extension = ".exe") {
   return null;
 }
 
-// One git call in `cwd`, its output trimmed; throws when git is not on the PATH, fails or takes too long. The opened
-// repository's config cannot turn it into a program: the keys that run one are pinned (`core.fsmonitor`,
-// `core.hooksPath`, `log.showSignature`), the `GIT_*` variables that point git elsewhere (a hook's GIT_DIR) are dropped,
-// and nothing is fetched. `own`, the caller's own variables, set after the drop (a temporary index, say).
-export function git(args, cwd, own = {}) {
+// One git call in `cwd`, its output trimmed; throws when git is not on the PATH, fails or takes longer than
+// GIT_TIMEOUT. `own`, the caller's own variables (gitWithin).
+export const git = (args, cwd, own = {}) => gitWithin(args, cwd, { own });
+
+// One git call in `cwd`, its output trimmed, ended after `timeout` milliseconds, GIT_TIMEOUT when none is given;
+// throws when git is not on the PATH, fails or runs out, an error whose `code` is "ETIMEDOUT" when it ran out. The
+// opened repository's config cannot turn it into a program: the keys that run one are pinned (`core.fsmonitor`, `core.hooksPath`, `log.showSignature`), the
+// `GIT_*` variables that point git elsewhere (a hook's GIT_DIR) are dropped, and nothing is fetched. `own`, the
+// caller's own variables, set after the drop (a temporary index, say).
+export function gitWithin(args, cwd, { own = {}, timeout = GIT_TIMEOUT }) {
   const program = findProgram("git");
   if (!program) throw new Error("git is not on the PATH");
   const kept = Object.entries(process.env).filter(([k]) => !k.toUpperCase().startsWith("GIT_"));
   const env = Object.assign(Object.create(null), Object.fromEntries(kept), own, { GIT_NO_LAZY_FETCH: "1" });
   return execFileSync(program, ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/nonexistent",
     "-c", "log.showSignature=false", ...args], {
-    cwd, encoding: "utf8", timeout: GIT_TIMEOUT, stdio: ["ignore", "pipe", "ignore"],
+    cwd, encoding: "utf8", timeout, stdio: ["ignore", "pipe", "ignore"],
     env, windowsHide: true,
   }).trim();
 }

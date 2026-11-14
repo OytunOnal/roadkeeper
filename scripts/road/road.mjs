@@ -1,7 +1,8 @@
 // @level main
-// Roadkeeper — The Road's entry, its one interface (ADR 0005): the page and the road model. It wires the page's sources
-// (infrastructure), the road model (domain), the page's HTML (presentation) and the structure module's Architecture tab
-// part, and draws the page under its budget a size step at a time; everything under lib/ is private.
+// Roadkeeper — The Road's entry, its one interface (ADR 0005): the page, the road model and the session-start line. It wires the page's sources
+// (infrastructure), the road model (domain), the page's HTML (presentation, through the page's entry, page/page.mjs) and
+// the structure module's Architecture tab part, and draws the page under its budget a size step at a time; everything
+// under lib/ and page/ is private.
 //
 // What the module reads, under the project root: the page's sources (lib/page-sources.mjs) and, through the structure
 // module's entry, the structure files; under the plugin's root, the token file. The tracker's read and today are the
@@ -12,8 +13,10 @@ import { fileURLToPath } from "node:url";
 import { architecture, report } from "../structure/structure.mjs";
 import { modelSources, pageSources, pageTokens } from "./lib/page-sources.mjs";
 import { roadModel as modelOf } from "./lib/road-model.mjs";
-import { MAX_PAGE, roadHtml } from "./lib/road-html.mjs";
-import { onePagerName } from "./lib/road-progress.mjs";
+import { onePagerName } from "./lib/issue-body.mjs";
+import { MAX_PAGE, roadHtml } from "./page/page.mjs";
+
+export { sessionLine } from "./lib/session-line.mjs";
 
 const PAGE_BUDGET = 15.5 * 1024 * 1024; // a draw above this is redrawn at the next size step
 // found from this file, so every project's Road draws from the plugin's one design

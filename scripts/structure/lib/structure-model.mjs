@@ -8,7 +8,8 @@ import { MAX_DEPTH, pathAndParents } from "./source-paths.mjs";
 // The declared structure, read into one model: docs/roadkeeper/dependency-rules.md, in the shape of its template in
 // skills/slice/references/structure.md, and docs/roadkeeper/structure.json, the stack tool's output. Its fields:
 // - `rings`, the declared levels, innermost first, peers on one ring; `ringOf`, each level's ring;
-// - `declaredModules`, `exceptions`, `relations`, `tests` and `ignore`, as dependency-rules.md declares them;
+// - `declaredModules`, `exceptions`, `relations`, `tests` and `ignore`, as dependency-rules.md declares them; `mirrors`,
+//   its tests mirrors, each a tests folder and the code folder whose suites it holds at the same paths;
 // - `modules`, each with its `path`, `level` (its root files' outermost), `ring`, `levels` (its files' and its nested
 //   modules', innermost first), `rootFiles`, `entry` (its one root file; none with several), `files` and `parent`;
 // - `loose`, the files no module holds; `edges`, each with its two ends' modules and levels and whether an end is loose;
@@ -40,6 +41,10 @@ const REVIEW_POINT = /\((\d{4}-\d{2}-\d{2}|v\d+(?:\.\d+){0,3})\)$/;
 // a few stars, so matching it against a path has a small fixed cost
 const TEST_PATTERN = /^[A-Za-z0-9_.*-]+(?:\/[A-Za-z0-9_.*-]+)*$/;
 const TEST_SEGMENTS = 16, TEST_STARS = 8;
+// a tests mirror: `- \`tests/\` mirrors \`scripts/\``, a tests folder holding a code folder's suites at the same paths
+const MIRROR_LINE = /^-\s+\x60([^\x60*]{1,200})\x60\s+mirrors\s+\x60([^\x60*]{1,200})\x60\s*$/;
+// a project has a code folder or two; past this many a mirror line is unread, so the rulings' lookup stays small
+const MAX_MIRRORS = 8;
 // a project ignores a few build outputs: past MAX_IGNORE a line is unread, so the walk's matching stays bounded
 export const MAX_IGNORE = 20;
 // a `## Modules` line, `- \`folder\`` or `- \`folder/*\``; a one-line comment, as the reference's template keeps under
@@ -91,7 +96,7 @@ export function structureModel(mdText, jsonText) {
   // value open closes it, so the repository's text is still inside a pair
   const cut = (what) => { if (what.length <= MESSAGE) return what; const t = what.slice(0, MESSAGE) + "…"; return (t.split("`").length - 1) % 2 ? t + "`" : t; };
   const malformed = [], bad = (where, what) => malformed.push({ where, what: cut(what) });
-  const rings = [], ringOf = new Map(), exceptions = [], relations = [], tests = [], ignore = [], declaredModules = { folders: [], groups: [] };
+  const rings = [], ringOf = new Map(), exceptions = [], relations = [], tests = [], mirrors = [], ignore = [], declaredModules = { folders: [], groups: [] };
   const ends = (at, a, b, push) => {
     const f = pathOf(a), t = pathOf(b);
     if (f.why || t.why) return bad(at, `a path ${f.why || t.why}`);
@@ -109,11 +114,17 @@ export function structureModel(mdText, jsonText) {
     const p = pathOf(pathLineMatch[1]);
     return p.why ? bad(at, `a path ${p.why}`) : exceptions.push({ path: p.path, from: null, to: null, ...x });
   };
+  // a `## Tests` mirror line, matched: the tests folder and the code folder whose suites it holds at the same paths
+  const mirrorLine = (at, match) => {
+    if (mirrors.length >= MAX_MIRRORS) return bad(at, `more than ${MAX_MIRRORS} mirror lines: the line is not read`);
+    return ends(at, match[1], match[2], (testsFolder, codeFolder) => mirrors.push({ tests: testsFolder, code: codeFolder }));
+  };
   let section = null;
   readerLines(mdText).forEach((line, idx) => {
     const at = `dependency-rules.md:${idx + 1}`;
     if (/^##\s/.test(line)) { section = line.slice(2).trim().toLowerCase(); return; }
     if (!line.trim()) return;
+    const mirror = section === "tests" ? MIRROR_LINE.exec(line.trim()) : null;
     if (section === "levels" && NUMBERED.test(line)) {
       const rest = line.replace(NUMBERED, ""), cut = rest.search(SEPARATOR);
       const names = cut < 0 ? [] : rest.slice(0, cut).split("|").map((s) => s.trim());
@@ -124,13 +135,15 @@ export function structureModel(mdText, jsonText) {
       rings.push(names);
     } else if (section === "exceptions" && /^-\s/.test(line)) {
       exceptionLine(at, line.trim(), idx + 1);
+    } else if (mirror) {
+      mirrorLine(at, mirror);
     } else if ((section === "tests" || section === "ignore") && /^-\s/.test(line)) {
       // `## Ignore` names files the digest leaves out — a build's output inside a module — in the same shape as tests
       const m = /^-\s+\x60([^\x60]{1,200})\x60\s*$/.exec(line.trim());
       const segs = m ? m[1].split("/") : [];
       if (!m || !TEST_PATTERN.test(m[1]) || /(?:^|\/)\.\.?(?:\/|$)/.test(m[1]) || segs.length > TEST_SEGMENTS
         || segs.some((g) => g !== "**" && g.includes("**")) || (m[1].match(/\*/g) || []).length > TEST_STARS) {
-        return bad(at, `${section === "tests" ? "a test" : "an ignore"} line reads - \`pattern\`, a path with * and ** (** a whole segment) and no . or .. segment, at most ${TEST_SEGMENTS} segments and ${TEST_STARS} stars`);
+        return bad(at, `${section === "tests" ? "a test" : "an ignore"} line reads - \`pattern\`, a path with * and ** (** a whole segment) and no . or .. segment, at most ${TEST_SEGMENTS} segments and ${TEST_STARS} stars${section === "tests" ? ", or - `tests/` mirrors `scripts/` for a tests folder holding a code folder's suites at the same paths" : ""}`);
       }
       if (section === "ignore" && ignore.length >= MAX_IGNORE) return bad(at, `more than ${MAX_IGNORE} ignore patterns: the line is not read`);
       (section === "tests" ? tests : ignore).push(m[1]);
@@ -165,7 +178,7 @@ export function structureModel(mdText, jsonText) {
   try { data = JSON.parse(String(jsonText || "").replace(/^\uFEFF/, "")); } catch { /* reported below */ }
   if (!data || typeof data !== "object" || !Array.isArray(data.modules) || !Array.isArray(data.edges)) {
     bad("structure.json", "structure.json is not an object with `modules` and `edges` arrays");
-    return { rings, ringOf: ringOfLevel, declaredModules, modules: [], loose: [], edges: [], exceptions, relations, declarations: [], levels: [], fileLevels: Object.create(null), mixed: mixedFiles, tests, ignore, digest: null, malformed };
+    return { rings, ringOf: ringOfLevel, declaredModules, modules: [], loose: [], edges: [], exceptions, relations, declarations: [], levels: [], fileLevels: Object.create(null), mixed: mixedFiles, tests, mirrors, ignore, digest: null, malformed };
   }
   const modules = [], byPath = new Map(), rootFileLevelsOf = new Map();
   data.modules.forEach((mod, i) => {
@@ -305,7 +318,7 @@ export function structureModel(mdText, jsonText) {
     if (typeof data.digest === "string" && DIGEST.test(data.digest)) digest = data.digest;
     else bad("structure.json digest", "`digest` is the stamp's SHA-256 over the modules' files, 64 hex characters");
   }
-  return { rings, ringOf: ringOfLevel, declaredModules, modules, loose, edges, exceptions, relations, declarations, levels, fileLevels, mixed: mixedFiles, tests, ignore, digest, malformed };
+  return { rings, ringOf: ringOfLevel, declaredModules, modules, loose, edges, exceptions, relations, declarations, levels, fileLevels, mixed: mixedFiles, tests, mirrors, ignore, digest, malformed };
 }
 // an edge's two ends, the model's or the check's, one record each: its file, the module holding it (null for none) and
 // whether it is one of the files no module holds

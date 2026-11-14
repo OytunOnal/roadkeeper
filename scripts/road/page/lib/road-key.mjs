@@ -3,7 +3,7 @@
 // look's words to a screen reader and on hover, and by the closed chip; and the terms the legend explains. Draws HTML
 // from fixed words; it reads no tracker text.
 
-import { esc } from "../../_text.mjs";
+import { named } from "./road-words.mjs";
 
 // Each look by its class (an issue's slice class, a milestone's stamp class), its swatch's class, the words the key
 // prints and what they mean. `board` marks the board's state labels: the words are the label an open issue carries,
@@ -34,9 +34,6 @@ export const lookOf = (label) => KEY.find((k) => k.board && k.words === label) |
 
 // The look a closed issue keeps from its board label, real-green's or mock-green's, or null: it is drawn closed.
 export const closedLookOf = (label) => KEY.find((k) => k.keptClosed && k.words === label) || null;
-
-// An element's name, to a screen reader and on hover.
-export const named = (name) => ` aria-label="${esc(name)}" title="${esc(name)}"`;
 
 // The word a marker of the look `look` says: its entry's words; where they join two states, the first for an issue on
 // a milestone, the second for one without.

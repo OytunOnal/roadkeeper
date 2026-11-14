@@ -1,12 +1,12 @@
 // @level infrastructure
 // Roadkeeper — the plan command's disk work: the spec and the base structure.json at the paths given, each a plain file
-// under its cap, and the structure files through the one guarded read (disk-reads.mjs). Writes nothing.
+// under its cap, and the structure files through the one guarded read (../../lib/disk-reads.mjs). Writes nothing.
 
 import { resolve } from "node:path";
-import { readPlainFile } from "../../_files.mjs";
-import { STRUCTURE_CAP } from "./structure-model.mjs";
+import { readPlainFile } from "../../../_files.mjs";
+import { STRUCTURE_CAP } from "../../lib/structure-model.mjs";
 import { SPEC_CAP } from "./slice-plan.mjs";
-import { readStructureFiles } from "./disk-reads.mjs";
+import { readStructureFiles } from "../../lib/disk-reads.mjs";
 
 // The plan's files, each the text read or null: the spec and the base at the paths given from the root, the base null
 // when no path is given; the structure files at theirs, both null when docs/roadkeeper is no plain folder.

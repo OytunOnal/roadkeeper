@@ -3,8 +3,8 @@
 // the change in colour; a file no module holds is a box of its own, at its levels. Pure: a plan and a model in,
 // mermaid text out; the plan's reading and edges are slice-plan.mjs.
 
-import { cutLevels, grouped, printable } from "./printable.mjs";
-import { pairsOf, partLevels, placed } from "./structure-model.mjs";
+import { cutLevels, grouped, printable } from "../../lib/printable.mjs";
+import { pairsOf, partLevels, placed } from "../../lib/structure-model.mjs";
 import { insideLine, planEdges, planRead } from "./slice-plan.mjs";
 
 // the drawing: the planned modules first, then their neighbours, at most this many boxes, the rest counted
@@ -13,7 +13,7 @@ const MAX_DRAWN = 40;
 // The plan drawn on the current structure (`sm`, the model the spec is written against): one box per module, grouped by
 // level outermost on top; what exists grey, what the plan adds or moves to another level in colour, a seam marked.
 // Mermaid text, every name printed through `printable`, so the repository's text cannot write mermaid.
-export function slicePlanDrawing(plan, sm) {
+function slicePlanDrawing(plan, sm) {
   const level = partLevels(sm);
   const known = new Set(level.keys());
   const fresh = new Set(plan.modules.filter((m) => !known.has(m.path)).map((m) => m.path));

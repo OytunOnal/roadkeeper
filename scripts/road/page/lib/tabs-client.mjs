@@ -1,6 +1,6 @@
 // @level presentation
 // Roadkeeper — The Road's tabs' client: the tabs, the fold, and the address it writes. The page embeds each function here
-// by its own source (road-html.mjs), in one scope with the road client's (road-client.mjs), whose functions decide for
+// by its own source (../page.mjs), in one scope with the road client's (road-client.mjs), whose functions decide for
 // it; it imports nothing.
 
 // The tabs and the fold, `ids` the page's tabs in order. `tabs` holds the ids, the nav and the tab open now.
@@ -11,7 +11,8 @@ export function tabsClient(ids) {
   function step(){ stepThroughHistory(tabs); }
   window.addEventListener('popstate', step);
   window.addEventListener('hashchange', step);
-  tabs.nav.addEventListener('click', function(ev){ switchOnClick(tabs, ev); });
+  // any link naming a tab switches it, the nav's and the page's own (a counter's) alike
+  document.addEventListener('click', function(ev){ switchOnClick(tabs, ev); });
   showTab(tabs, pickTab(tabs));
   markHistoryStepAndAddress(tabs);
   document.addEventListener('click', toggleMore);

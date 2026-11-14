@@ -59,7 +59,7 @@ Take the steps in order.
 
 - **`js-ts`**: cases read from a JUnit report; the install is `node_modules`; the default tests `**/*.test.ts`.
   - Vitest: `["npx", "vitest", "run", "--reporter=junit", "--outputFile={out}", "{files}"]`.
-  - Node's runner: `["node", "--import", "tsx", "--test", "--test-reporter=junit", "--test-reporter-destination={out}", "{files}"]`.
+  - Node's runner: `["node", "--import", "tsx", "--test", "--test-reporter=junit", "--test-reporter-destination={out}", "--test-reporter=spec", "--test-reporter-destination=stdout", "{files}"]`: the second reporter prints why a test file could not load, which the JUnit report leaves out.
   - ESLint for `lintFile`: `["npx", "eslint", "--format", "json", "{file}"]`.
 - **`python`**: cases read from a JUnit report; lint read from the line `path:line:col: CODE message`; no install; the default tests `**/test_*.py` and `**/*_test.py`, all in one run. Run each tool through `uv run`, which builds every worktree's and copy's own environment from uv's cache; the install is never `.venv` (step 1).
   - pytest: `["uv", "run", "pytest", "--continue-on-collection-errors", "--junitxml={out}", "{files}"]`: a test file pytest cannot import fails as one case, and the other files' cases are still read.

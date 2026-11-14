@@ -79,7 +79,7 @@ A plugin runs code in your session. Roadkeeper's are the hooks under `scripts/` 
 - `merge-guard` reads the pull request a `gh` merge names.
 - The check at write runs your project's linter, as your `docs/roadkeeper/commands.json` names it.
 
-Nothing else leaves your machine. Genesis or adopt sets up the project's tools, and with them your `.gitignore` names the snapshot ([Ignored files](skills/slice/references/project-tools.md#ignored-files)). Before you install it, read `scripts/hooks.json`, which says when each hook runs; then the opening comment of each of the seven files it names, which says what that hook reads, writes and refuses; then `scripts/_hook.mjs`, the rules they share.
+Nothing else leaves your machine. Genesis or adopt sets up the project's tools, and with them your `.gitignore` names the snapshot ([Ignored files](skills/slice/references/project-tools.md#ignored-files)). Before you install it, read [`scripts/hooks.json`](scripts/hooks.json), which says when each hook runs; then the opening comment of each of the seven files it names, which says what that hook reads, writes and refuses: [`nudge`](scripts/nudge.mjs), [`road-redraw`](scripts/road-redraw.mjs), [`git-alone`](scripts/git-alone.mjs), [`no-heredoc`](scripts/no-heredoc.mjs), [`merge-guard`](scripts/merge-guard.mjs), [`check-at-write`](scripts/check-at-write.mjs), [`skills-pointer`](scripts/skills-pointer.mjs); then [`scripts/_hook.mjs`](scripts/_hook.mjs), the code they share.
 
 1. In a terminal, install the skills Roadkeeper calls. This installs all of Matt Pocock's skills, for every project on your machine (`-g`), without asking (`-y`):
 
@@ -143,8 +143,8 @@ A change to one of these that makes you act, a file to move or a command to type
 
 The next versions, by their titles:
 
-- v3.1.1 — The code that draws The Road and plans a change lives in folders of their own
 - v3.2.0 — A change runs only the tests it touches, and a red from load reruns only what failed
+- v3.2.1 — Roadkeeper's tools say what really went wrong
 - v3.3.0 — Roadkeeper's own tools and rules cost a session less
 - v3.4.0 — Roadkeeper's tools say what they did, and a slice runs without a hand
 - v3.4.1 — Roadkeeper's skills and the Architecture tab read short and plain

@@ -52,7 +52,7 @@ Changed code is held to these; case conventions stay the project's.
 
 <!-- The guard case before a change follows Michael Feathers's Working Effectively with Legacy Code; no text is copied. -->
 
-- A test waits on an event, never on a sleep. A timing test sets its limit from the work it times (the same work at a smaller size in the same run, or the time the work itself is made to take), never a fixed number of seconds.
+- A test waits on an event, never on a sleep. A time limit, a test's or a tool's, is set from the work it bounds: for work that grows with its input, a floor plus an allowance per item; a fixed number of seconds only for work of a fixed size, or under a limit its caller sets (a hook's). A test's comes from the same work at a smaller size in the same run, or the time the work itself is made to take.
 - A fixture standing for a repository file copies that file, never retypes it. A regenerated fixture records why.
 - A test asserts a decision, not content: a check keyed to a substring, a word count or a sentence's shape is a finding unless the contract declares that set and the test names it.
 - No source-grep: a test reads output or runs the code. Two precedents are read from their files: a sweep proving a retired name gone, and a file no test can run (a CI workflow).

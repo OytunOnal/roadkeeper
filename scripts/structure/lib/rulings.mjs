@@ -56,6 +56,17 @@ export function judgingOptions({ snapshot = null, today = null, stamping = null,
   return { today, closedVersions: snapshot ? closedVersions(snapshot) : [], snapshotRead: Boolean(snapshot), snapshotOptional, stamping };
 }
 
+// The module a file under a tests mirror counts as inside (GLOSSARY: Tests mirror), or null: the deepest module holding
+// the code path it mirrors. The mirrors holding the file are tried the longer tests folder first, as a file's module is
+// its deepest, a tie in line order (one tests folder for two code folders); the first whose path lands in a module counts.
+function mirroredOwnerOrNull(mirrors, byPath, file) {
+  const holding = mirrors.filter((mirror) => underPath(file, mirror.tests)).sort((a, b) => b.tests.length - a.tests.length);
+  for (const mirror of holding) {
+    for (const path of pathAndParents(mirror.code + file.slice(mirror.tests.length))) if (byPath.has(path)) return byPath.get(path);
+  }
+  return null;
+}
+
 // one dependency between two files, folded by its ends and kind
 const edgeKey = (e) => `${e.from}\n${e.to}\n${e.kind}`;
 
@@ -145,7 +156,9 @@ export function rulings(sm, judging = judgingOptions()) {
     if (!isCodeEdge(e)) continue;
     const key = edgeKey(e), seen = edges.get(key);
     if (seen) { seen.n++; continue; }
-    const a = e.fromModule ? byPath.get(e.fromModule) : null, b = e.toModule ? byPath.get(e.toModule) : null, test = isTest(e.from);
+    const test = isTest(e.from), b = e.toModule ? byPath.get(e.toModule) : null;
+    // a test under a tests mirror is ruled from inside the module at its mirrored path; its record keeps its own place
+    const a = e.fromModule ? byPath.get(e.fromModule) : (test && mirroredOwnerOrNull(sm.mirrors, byPath, e.from)) || null;
     if (!b && !e.toLoose) continue;
     // file to file: the two files' levels, whatever modules hold them
     const out = !test && outward(placed(sm, e.fromLevel), placed(sm, e.toLevel));

@@ -6,7 +6,7 @@
 // prefers-color-scheme query. Reads a value only when it is a hex colour; with any of the six missing, or the file
 // unread, the icon is empty and still asks for nothing.
 
-import { esc } from "../../_text.mjs";
+import { esc } from "../../../_text.mjs";
 
 const LIGHT = ":root {";                        // the token file's light block opens so
 const DARK = ':root[data-theme="dark"] {';      // and its page-set dark block, the same values as the system's dark

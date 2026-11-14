@@ -19,6 +19,7 @@ export function tabDom() {
   pressToggle(sv, {mode:sv.D.openingButton(), pressedBySelection:false});
   listenPanAndZoom(sv); listenControls(sv);
   render(sv); fitView(sv);
+  removeNotStartedLine();
   window.addEventListener('resize', function(){ fitView(sv); });
   // the tab may be hidden at load: fit again when it is shown
   document.addEventListener('road:tab', function(e){ if (e.detail==='architecture') setTimeout(function(){ fitView(sv); }, 0); });
@@ -40,6 +41,8 @@ export function svState(root, V){
     T:{k:1,x:0,y:0}, scene:null, view:null, selected:null, selEdge:null, hover:null, toggle:{mode:'bad', pressedBySelection:false}, moved:false, drawn:[], drag:null, held:false };
 }
 export function byId(id){ return document.getElementById(id); }
+// drawn: the stage's not-started line goes; the tab's markup always holds it
+export function removeNotStartedLine(){ var line=byId('sv-not-started'); line.parentNode.removeChild(line); }
 export function svgEl(t,a,txt){ var e=document.createElementNS('http://www.w3.org/2000/svg',t); for (var k in (a||{})) e.setAttribute(k,a[k]); if (txt!=null) e.textContent=txt; return e; }
 export function htmlEl(t,cls,txt){ var e=document.createElement(t); if(cls) e.className=cls; if(txt!=null) e.textContent=txt; return e; }
 // chain: the views from the top down to `id`
