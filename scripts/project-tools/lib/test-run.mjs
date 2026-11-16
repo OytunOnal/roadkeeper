@@ -1,6 +1,7 @@
 // @level infrastructure
 // Roadkeeper — a project's tests run by name in one tree: `beforeTests`' steps first (steps-run.mjs), then `runTests` over
-// the test files, as many to a run as the commands file's `filesPerRun`, the runs side by side, each run's cases read by
+// the test files, as many to a run as the commands file's `filesPerRun`, the runs side by side, each bounded by its
+// files (command-run.mjs, testRunLimit), each run's cases read by
 // the adapter, a crashed file's then made unknown (case-outcomes.mjs); a crashed run's other files each run again alone,
 // to find a crash the run did not write. `{files}`, an argument of its own, becomes the run's files, each its own
 // argument; `{out}`, anywhere in an argument, a results file in the caller's folder. A run no case is read from is
@@ -13,10 +14,10 @@ import { join } from "node:path";
 import { plural } from "../../_text.mjs";
 import { adapterOf } from "../adapters/adapters.mjs";
 import { crashedFiles, listedByFile, unknownMarked } from "./case-outcomes.mjs";
-import { commandEnv, runCommandForOutput } from "./command-run.mjs";
+import { commandEnv, runCommandWithin, testRunLimit } from "./command-run.mjs";
 import { COMMANDS_FILE, readCommands } from "./commands-file.mjs";
 import { workingFile, workingFiles } from "./commit-tree.mjs";
-import { stepsPass, tailLines } from "./steps-run.mjs";
+import { firstRedStep, tailLines } from "./steps-run.mjs";
 import { worktreeInstall, worktreeRoot } from "./worktree.mjs";
 
 const FILES = "{files}"; // runTests' argument the test files take the place of
@@ -75,7 +76,7 @@ async function inPool(tasks) {
 // commands, adapter, env }.
 async function runCases(run, files, out) {
   const { tree, commands, adapter, env } = run;
-  const ran = await runCommandForOutput(expanded(commands.runTests, files, out), tree, env);
+  const ran = await runCommandWithin(expanded(commands.runTests, files, out), { cwd: tree, env, timeout: testRunLimit(files.length) });
   return { ran, cases: adapter.cases({ root: tree, files, output: ran.tail, results: out }) };
 }
 
@@ -111,7 +112,7 @@ const emptyRunLines = ({ group, ran }, label) => [
 async function treeRuns(run, say) {
   const { tree, commands, adapter, files, results, label } = run;
   const before = commands.beforeTests ?? [];
-  if (before.length) await stepsPass({ root: tree, steps: before }, (l) => say(l.startsWith(" ") ? l : `${label}: beforeTests: ${l}`));
+  if (before.length) await firstRedStep({ root: tree, steps: before }, (l) => say(l.startsWith(" ") ? l : `${label}: beforeTests: ${l}`));
   mkdirSync(results, { recursive: true });
   const env = commandEnv(tree);
   const tasks = groups(files, commands.filesPerRun).map((group, k) => () => groupCases(
@@ -136,11 +137,19 @@ const totalLine = ({ cases, files, passes, started }) =>
   `${TESTS_LABEL}: ${plural(cases.length, "case")} in ${plural(files.length, "file")}, all pass: ${passes ? "True" : "False"} ` +
   `(${((Date.now() - started) / 1000).toFixed(1)} s)`;
 
+// The test files a run failed, in the files' order: each holding a failed or unknown case, and each of a run that read
+// no case.
+const failedFiles = (files, runs, failed) => {
+  const named = new Set([...failed.map((c) => c.file), ...runs.filter((r) => !r.cases.length).flatMap((r) => r.group)]);
+  return files.filter((f) => named.has(f));
+};
+
 // The green's `{tests}` step in the worktree `setup` holds (testSetup's): `files`, by their paths from its root, else
 // every test file of it (worktreeTests), run by name in place, its results in a throwaway folder of the OS temp folder,
 // removed after. Says each failed or unknown case with its detail under its file, then the total line; a run that read
-// no case is said. A promise of whether every case passed or was skipped, every run reading one.
-export async function testsStepPasses(setup, say, files = worktreeTests(setup)) {
+// no case is said. A promise of { passes, failed }: whether every case passed or was skipped, every run reading one,
+// and the test files that failed (failedFiles).
+export async function testsStepRun(setup, say, files = worktreeTests(setup)) {
   const started = Date.now();
   if (!files.length) say(`${TESTS_LABEL}: no file matches ${setup.patternsLine}`);
   const results = mkdtempSync(join(tmpdir(), "roadkeeper-green-tests-"));
@@ -151,7 +160,7 @@ export async function testsStepPasses(setup, say, files = worktreeTests(setup)) 
     for (const line of listedByFile(failed)) say(line);
     const passes = cases.length > 0 && !failed.length && runs.every((r) => r.cases.length);
     say(totalLine({ cases, files, passes, started }));
-    return passes;
+    return { passes, failed: failedFiles(files, runs, failed) };
   } finally {
     rmSync(results, { recursive: true, force: true });
   }

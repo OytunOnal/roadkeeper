@@ -36,15 +36,7 @@
             "type": "command",
             "command": "node",
             "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/git-alone.mjs"
-            ],
-            "timeout": 10
-          },
-          {
-            "type": "command",
-            "command": "node",
-            "args": [
-              "${CLAUDE_PLUGIN_ROOT}/scripts/no-heredoc.mjs"
+              "${CLAUDE_PLUGIN_ROOT}/scripts/shell-block.mjs"
             ],
             "timeout": 10
           },

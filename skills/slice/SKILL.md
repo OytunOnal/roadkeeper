@@ -43,7 +43,7 @@ A slice that fits a single ticket, with no new screen, skips steps 1–6: commit
    - update `docs/roadkeeper/ARCHITECTURE.md` (`references/architecture.md`);
    - in a structured project, rerun the structure command so `structure.json` matches the code.
 10. **Real use.**
-    - **You:** run what shipped yourself (Roadkeeper's: `claude -p` in a subshell, `(cd <worktree> && claude -p …)`), and say what you checked.
+    - **You:** run what shipped yourself (Roadkeeper's: `claude -p`, from a script file under `.run/` that starts it in the worktree), and say what you checked.
     - **The human:** what the look could not show and only they can do (`road`, Waiting on you, rules 1 and 2). None: no human step.
     - **No live instance:** draw the case from a copied snapshot of its data, on a scratch page under `.run/`.
     - **Later use:** when real use comes only with a later event (another slice, a milestone's close, another project's session), the real-use issue stays `mock-green` and names that event in its body's last paragraph, `**Waits on:** <the event>`, one short line kept current; once only the human's step is left, the line goes and `waiting-on-you` joins `mock-green`; the retro waits for it.

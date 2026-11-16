@@ -23,7 +23,7 @@ Take the steps in order.
    - `beforeTests` (optional): what the tests need built first on an older tree.
    - `lintFile` (optional): the linter on one file, `{file}` its path: the check at write.
    - `readByNothing` (optional): files no step reads, as the CI's ignored paths; `docs/roadkeeper/**` when left out. A tree differing from a green one only in these runs the doc tests alone.
-   - `docTests` (optional, with `runTests`): the doc tests, the test files that read a `readByNothing` file; a test reading files it does not name (a sweep) goes here too. Once declared, `[]` included, a document-only commit lands only on its own green stamp, and a test naming a listed path in neither this list nor `notDocTests` turns the green red; until then the green prints a line for it.
+   - `docTests` (optional, with `runTests`): the doc tests, the test files that read a `readByNothing` file; a test reading files it does not name (a sweep) goes here too. Once it names a test, a document-only commit lands only on its own green stamp; empty or absent, it lands on a nearby one. Once declared, `[]` included, a test naming a listed path in neither this list nor `notDocTests` turns the green red; until then the green prints a line for it.
    - `notDocTests` (optional): test files that name a listed path but read none, such as one writing a fixture copy.
    - An entry of either list naming no file turns the green red.
    - `install` (optional): the folder holding the installed packages, its path from the root; the stack's when left out. Never `.venv`: its editable install points at the main checkout's source, so a copy's tests would import the main checkout's code.
@@ -47,7 +47,7 @@ Take the steps in order.
 
 4. **Suppressions.** With the Ceilings in, `npx eslint --suppress-all .` records every other breach in `eslint-suppressions.json`, committed. A file's count of a rule cannot grow; `npx eslint --prune-suppressions .` drops the ones paid off.
 
-5. **Structure.** Where `docs/roadkeeper/dependency-rules.md` exists, run `node ${CLAUDE_PLUGIN_ROOT}/scripts/structure-check.mjs`. Each hard, stale or unread line turns the green red: fix it, or write a hard line as an exception with its version (`structure.md`, Known debt). After adopt's tour, the structure command waits for the first slice (`structure.md`, Adopting), and the green is red until then. On a Python project the structure command counts the code's imports, tests aside, that it found neither in a search place (the importing file's folder, the root, `src/`) nor in the standard library: the map may be missing those imports' arrows.
+5. **Structure.** Where `docs/roadkeeper/dependency-rules.md` exists, run `node ${CLAUDE_PLUGIN_ROOT}/scripts/structure-check.mjs`. Each hard, stale or unread line turns the green red: fix it, or write a hard line as an exception with its version (`structure.md`, Known debt). After adopt's tour, the structure command waits for the first slice (`structure.md`, Adopting), and the green is red until then. On a Python project the structure command counts the code's imports, tests aside, that it found neither in a search place (the importing file's folder, each folder above it, the root, `src/`) nor in the standard library: the map may be missing those imports' arrows.
 
 6. <a id="ignored-files"></a>**Ignored files.** `.gitignore` names `.run/`, where the green's stamp and agents' scratch live, and `docs/roadkeeper/issues.json`, the tracker's snapshot the hooks and the `road` command rewrite.
 
@@ -66,7 +66,7 @@ Take the steps in order.
   - ruff for `lintFile`: `["uv", "run", "ruff", "check", "--output-format=concise", "{file}"]`; flake8's default line reads the same, and pylint's as `["uv", "run", "pylint", "--msg-template={path}:{line}:{column}: {msg_id} {msg}", "{file}"]`.
   - Roadkeeper's lint rules reach a Python project at review; its own linter, at write.
 
-A linked worktree with no install of its own gets the main checkout's linked in while its `package-lock.json` beside the install matches the main checkout's byte for byte; otherwise each tool says to install in the worktree.
+A linked worktree with no install of its own gets the main checkout's linked in while its `package-lock.json` beside the install matches the main checkout's byte for byte; otherwise each tool says to install in the worktree. `node ${CLAUDE_PLUGIN_ROOT}/scripts/borrow-install.mjs` lays that link alone, before a suite run through the project's own runner.
 
 ## Another stack
 

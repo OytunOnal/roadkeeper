@@ -1,6 +1,7 @@
 // @level main
-// Roadkeeper — the structure module's entry, its one interface (ADR 0005): the structure report, the stamp, the graph and
-// its parsers, the Architecture tab's part of The Road's page, the plan's drawing and check, and its file patterns' match. It wires the module's
+// Roadkeeper — the structure module's entry, its one interface (ADR 0005): the structure report, the edges structure.json
+// records, the stamp, the graph and its parsers, the Architecture tab's part of The Road's page, the plan's drawing and
+// check, and its file patterns' match. It wires the module's
 // disk readers and parsers (infrastructure), its use cases and rules (application, domain) and its drawing
 // (presentation); everything under lib/ is private.
 //
@@ -10,7 +11,7 @@
 // tracker snapshot and today are the caller's to read. Writes nothing.
 
 import { structureModel } from "./lib/structure-model.mjs";
-import { readStructureFiles } from "./lib/disk-reads.mjs";
+import { GRAPH, readStructureFiles } from "./lib/disk-reads.mjs";
 import { diskFacts } from "./lib/disk-facts.mjs";
 import { stampFile, stampedText } from "./lib/stamp-file.mjs";
 import { sourceFiles } from "./lib/source-files.mjs";
@@ -25,10 +26,35 @@ import { architectureTab } from "./architecture-tab/architecture-tab.mjs";
 // lines; `snapshotOptional` makes a version exception with no snapshot a note line, not an unread one. A project with no
 // plain docs/roadkeeper, or neither structure file in it, declares none.
 export function report(root, options = {}) {
-  const files = readStructureFiles(root);
-  if (files.why || !files.present) return undeclaredReport();
+  const files = declaredFiles(root);
+  if (!files) return undeclaredReport();
   const sm = structureModel(files.md || "", files.js || "");
   return structureReport(sm, { md: files.md, js: files.js, facts: diskFacts(root, sm) }, options);
+}
+
+// The structure files of the project at `root` (lib/disk-reads.mjs), or null where it declares no structure: no plain
+// docs/roadkeeper, or neither file in it.
+function declaredFiles(root) {
+  const files = readStructureFiles(root);
+  return files.why || !files.present ? null : files;
+}
+
+// The edges structure.json records at `root`, as its file stands, not drawn again: { recorded, edges, unread }.
+// `recorded`: whether its edges were read; `edges` each { from, to }, none when not recorded; `unread` the line saying
+// what was not read, or null: structure.json missing, a link, over the cap, or not an object with `modules` and `edges`
+// arrays, where the project declares a structure (either structure file); or the edges it could not read, left out.
+export function recordedEdges(root) {
+  const files = declaredFiles(root);
+  const none = (unread) => ({ recorded: false, edges: [], unread });
+  if (!files) return none(null);
+  if (files.js === null) return none(`${GRAPH} is missing, a link or over the cap`);
+  const sm = structureModel(files.md || "", files.js);
+  if (sm.malformed.some((m) => m.where === "structure.json")) {
+    return none(`${GRAPH} is not an object with \`modules\` and \`edges\` arrays`);
+  }
+  const lost = sm.malformed.filter((m) => m.where.startsWith("structure.json edges[")).length;
+  const edges = sm.edges.map(({ from, to }) => ({ from, to }));
+  return { recorded: true, edges, unread: lost ? `edges of ${GRAPH} not read: ${lost}; structure-check.mjs names them` : null };
 }
 
 // structure.json at `root` stamped from its disk: { text, files, digest }, the text to write in its place; or
@@ -53,8 +79,9 @@ export async function graph(root, parsers) {
 
 // The real parsers, dependency-cruiser and TypeScript, and the Astro compiler for an `.astro` file, loaded from the
 // node_modules in `packagesDir` by the read that needs them, and the PATH's Python 3 for a `.py` file: { parsers }, a
-// missing install the read's stop. `given`, the --packages folder as typed, or null for the project's own.
-export const parsers = (packagesDir, { given = null } = {}) => parsersFrom(packagesDir, given);
+// missing install the read's stop. `given`, the --packages folder as typed, or null for the project's own; `borrow`,
+// run before the scripts' packages load: null, or { stop } (the caller's install borrow), never run for no script.
+export const parsers = (packagesDir, { given = null, borrow = null } = {}) => parsersFrom(packagesDir, given, borrow);
 
 // The Architecture tab's part of the page, from a declared structure's report (the tab's module,
 // architecture-tab/architecture-tab.mjs): { atop, html, css, js, leftOut }. `options`, handed on as they came:

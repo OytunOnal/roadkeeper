@@ -3,27 +3,32 @@
 // an older commit. Git reads the commit into a temporary index in that folder and checks it out from there, so
 // nothing is written under the repository's .git. A working tree's test file is named by its path from the worktree's
 // root, and read only when a plain file inside it with no link on the way; its files, every one or the uncommitted
-// ones, are git's lists. The laid-out tree is made a repository of its own, its files in its index, so a test reading
+// ones, are git's lists, each bounded at git's own bound and LISTING_PER_FILE a file the index tracks, a list that ran
+// out saying so. The laid-out tree is made a repository of its own, its files in its index, so a test reading
 // git's list of files finds them as in a checkout. Each sibling today's package.json names (siblings.mjs) is linked
 // beside the tree where it lies beside the main checkout, the tree laid at the main checkout's place as deep as they
 // need. A link the tools make is removed before the folder is, and a folder still holding one is left whole, and said.
-// Each git call laying out the commit is bounded at git's own bound and LAYOUT_PER_FILE a file of the commit, counted at
-// git's own bound; a refusal names the step that stopped: a git call, with its bound when it ran out, the tree's folder
+// Each git call laying out the commit is bounded at git's own bound and LAYOUT_PER_FILE a file of the commit, counted by
+// its listing; a refusal names the step that stopped: a git call, with its bound when it ran out, the tree's folder
 // or a copied file.
 
 import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, rmSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isPlainDir, lexists } from "../../_files.mjs";
-import { GIT_TIMEOUT, git, gitWithin } from "../../_git.mjs";
+import { GIT_TIMEOUT, git, gitWithin, trackedFiles } from "../../_git.mjs";
 import { controlsReplaced, cutAt } from "../../_text.mjs";
+import { callStopped, limitFor } from "../../_time-limit.mjs";
 import { siblingsOf } from "./siblings.mjs";
 import { isLink, linkFolder } from "./worktree.mjs";
 
 const NAME_SHOWN = 200; // characters of a refused file's name shown
 // milliseconds each file of the commit adds to a layout call's bound: three times the slowest call measured laying out
 // Roadkeeper's own tree, `git add -A` at about 6.5 ms a file
-const LAYOUT_PER_FILE = 20;
+export const LAYOUT_PER_FILE = 20;
+// milliseconds each file the index tracks adds to a git listing's bound: three times the slowest listing measured over
+// 20,000 files, `ls-files -c -o` at 1.1 us a file
+const LISTING_PER_FILE = 0.0033;
 
 // One of the layout's steps stopped: its message says the step, and a git call's bound when it ran out.
 class LayoutStopped extends Error {}
@@ -47,11 +52,23 @@ export function namedCommit({ root, name, label }, say) {
   return hash;
 }
 
+// The bound of a git listing in the worktree at `root`: git's own bound and LISTING_PER_FILE a file its index tracks.
+export const listingLimit = (root) => limitFor({ floor: GIT_TIMEOUT, perFile: LISTING_PER_FILE }, trackedFiles(root));
+
+// A git listing in the worktree at `root`, NUL-separated, as its entries, ended at listingLimit; throws an error whose
+// message says the call stopped (callStopped) and whose `code` is git's.
+function listing(args, root) {
+  const bound = listingLimit(root);
+  try { return entries(gitWithin(args, root, { timeout: bound })); } catch (e) {
+    throw Object.assign(new Error(callStopped(`git ${args[0]}`, bound, e)), { code: e.code });
+  }
+}
+
 // Every file of the commit `hash`, by its path from the root.
-export const commitFiles = (root, hash) => entries(git(["ls-tree", "-r", "-z", "--name-only", hash], root));
+export const commitFiles = (root, hash) => listing(["ls-tree", "-r", "-z", "--name-only", hash], root);
 
 // Every file of the working tree at `root` git tracks or does not ignore, by its path from the root, that is on disk.
-export const workingFiles = (root) => entries(git(["ls-files", "-z", "-c", "-o", "--exclude-standard"], root))
+export const workingFiles = (root) => listing(["ls-files", "-z", "-c", "-o", "--exclude-standard"], root)
   .filter((f) => lexists(join(root, f)));
 
 // whether the worktree at `root` has a commit yet: HEAD names one
@@ -59,11 +76,11 @@ const hasHead = (root) => { try { git(["rev-parse", "--verify", "-q", "HEAD"], r
 
 // The uncommitted files of the working tree at `root`, by their paths from it: changed against HEAD, staged or not, a
 // deleted one included, then the untracked files git does not ignore; with no commit yet (hasHead), every file in the
-// index first. Throws when git fails.
+// index first. Throws when git fails (listing).
 export function uncommittedFiles(root) {
-  const changed = entries(hasHead(root) ? git(["diff", "--name-only", "--no-renames", "-z", "HEAD", "--"], root)
-    : git(["ls-files", "-z", "-c"], root));
-  return [...new Set([...changed, ...entries(git(["ls-files", "-z", "-o", "--exclude-standard"], root))])];
+  const changed = hasHead(root) ? listing(["diff", "--name-only", "--no-renames", "-z", "HEAD", "--"], root)
+    : listing(["ls-files", "-z", "-c"], root);
+  return [...new Set([...changed, ...listing(["ls-files", "-z", "-o", "--exclude-standard"], root)])];
 }
 
 // A file's name as given, with forward slashes and no leading "./".
@@ -104,14 +121,10 @@ function layoutStep(step, said) {
   try { return step(); } catch (e) { throw new LayoutStopped(said(e)); }
 }
 
-// What stopped the git call `name` bounded at `bound` milliseconds: its bound when it ran out, else that it failed.
-const gitStopped = (name, bound, error) =>
-  (error?.code === "ETIMEDOUT" ? `${name} took longer than its ${Math.round(bound / 1000)} s` : `${name} failed`);
-
-// One git call laying out the commit, in `cwd`, ended after `bound` milliseconds (layoutStep, gitStopped). `call`:
+// One git call laying out the commit, in `cwd`, ended after `bound` milliseconds (layoutStep, callStopped). `call`:
 // { own, bound }, `own` gitWithin's.
 const layoutCall = (args, cwd, { own, bound }) =>
-  layoutStep(() => gitWithin(args, cwd, { own, timeout: bound }), (e) => gitStopped(`git ${args[0]}`, bound, e));
+  layoutStep(() => gitWithin(args, cwd, { own, timeout: bound }), (e) => callStopped(`git ${args[0]}`, bound, e));
 
 // The working tree's file `f` copied over the tree's, the folders holding it made first.
 function copiedIn(root, tree, f) {
@@ -128,8 +141,8 @@ function layTree(root, plan) {
   const { hash, tree, copied, install, installFrom } = plan;
   const own = { GIT_INDEX_FILE: plan.index };
   try {
-    const files = layoutStep(() => commitFiles(root, hash).length, (e) => gitStopped("git ls-tree", GIT_TIMEOUT, e));
-    const bound = GIT_TIMEOUT + LAYOUT_PER_FILE * files;
+    const files = layoutStep(() => commitFiles(root, hash).length, (e) => e.message);
+    const bound = limitFor({ floor: GIT_TIMEOUT, perFile: LAYOUT_PER_FILE }, files);
     layoutStep(() => mkdirSync(tree, { recursive: true }), () => "the tree's folder could not be made");
     layoutCall(["read-tree", hash], root, { own, bound });
     layoutCall(["checkout-index", "-a", "-f", `--prefix=${tree.split(sep).join("/")}/`], root, { own, bound });

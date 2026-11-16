@@ -14,10 +14,11 @@ import { pythonParser } from "./lib/python-parser.mjs";
 import { scriptParser } from "./lib/script-parser.mjs";
 import { SOURCE_MAX_BYTES, sizeStop } from "./lib/source-bounds.mjs";
 
-// The parsers that load from the folder `dir`: { parsers }, the packages loaded by the read that needs them.
-export function parsersFrom(dir, given) {
+// The parsers that load from the folder `dir`: { parsers }, the packages loaded by the read that needs them, `borrow`
+// run first when it is given (lib/script-parser.mjs).
+export function parsersFrom(dir, given, borrow = null) {
   const languageParsers = [
-    { takes: isScript, read: (root, toRead) => scriptParser({ dir, given }, root, toRead) },
+    { takes: isScript, read: (root, toRead) => scriptParser({ dir, given, borrow }, root, toRead) },
     { takes: isPython, read: pythonParser },
   ];
   return { parsers: { read: (root, files, declared) => readCode(languageParsers, root, { files, declared }) } };

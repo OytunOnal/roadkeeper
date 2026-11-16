@@ -1,18 +1,23 @@
 // @level infrastructure
 // Roadkeeper — git and the PATH: a program found on the PATH's absolute folders, one pinned `git` call, a repository's main
-// checkout, and the shape of a git object's full name. scripts/tools/_main_checkout.py holds the same main-checkout rule for the repository's tools.
+// checkout, the files a worktree's index tracks, and the shape of a git object's full name. scripts/tools/_main_checkout.py holds the same main-checkout rule for the repository's tools.
 //
 // A program runs as separate arguments, never through a shell, found on the PATH's absolute folders alone: Windows runs
 // a bare name from the current folder first, and a program in the project under check must never run. No `git` there
 // reads as git failing.
 
 import { execFileSync } from "node:child_process";
-import { accessSync, constants, statSync } from "node:fs";
+import { accessSync, closeSync, constants, openSync, readSync, statSync } from "node:fs";
 import { basename, delimiter, dirname, isAbsolute, join } from "node:path";
 
 export const GIT_TIMEOUT = 10000; // milliseconds one `git` call may take, unless its caller bounds it (gitWithin)
 const MAX_PATH_FOLDERS = 1000; // PATH folders looked in for a program
+const INDEX_HEADER = 12; // bytes of git's index header: its signature, its version and its count of entries
 export const OBJECT_HASH = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/; // a full SHA-1 or SHA-256 object name, nothing else
+const SHORT_HASH = 12; // characters of an object name a line shows: unique in any repository of this size
+
+// An object name as a line shows it, its first SHORT_HASH characters.
+export const shortHash = (hash) => hash.slice(0, SHORT_HASH);
 
 // a file this process may run
 function isPlainProgram(p) {
@@ -49,6 +54,21 @@ export function gitWithin(args, cwd, { own = {}, timeout = GIT_TIMEOUT }) {
     cwd, encoding: "utf8", timeout, stdio: ["ignore", "pipe", "ignore"],
     env, windowsHide: true,
   }).trim();
+}
+
+// The files the index of the worktree at `root` tracks, from the index's header: git names the index, whose first
+// INDEX_HEADER bytes are `DIRC`, a version from 2 to 4 and the count. Null when git names none or the header does not
+// read.
+export function trackedFiles(root) {
+  const head = Buffer.alloc(INDEX_HEADER);
+  let fd = null;
+  try {
+    fd = openSync(git(["rev-parse", "--path-format=absolute", "--git-path", "index"], root), "r");
+    if (readSync(fd, head, 0, INDEX_HEADER, 0) < INDEX_HEADER) return null;
+  } catch { return null; } finally { if (fd !== null) closeSync(fd); }
+  const version = head.readUInt32BE(4);
+  const gitsOwn = head.toString("latin1", 0, 4) === "DIRC" && version >= 2 && version <= 4;
+  return gitsOwn ? head.readUInt32BE(8) : null;
 }
 
 // The main checkout of the repository at `root` (itself, when `root` is one), or null: no git, or a git directory not

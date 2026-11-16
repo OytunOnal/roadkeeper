@@ -11,12 +11,16 @@ What a slice's subagents are told: implementers, the merger, the code-review axe
   > **Shell**
   > - The shell starts where you work. No `cd`.
   > - One command per call. `&&`, `;`, `|` and `$( )` are chains.
+  > - A silent result is exit 0; a failure shows its code, so nothing is chained to read it.
   > - Literal arguments. No `$variable`, glob or loop: use Glob, Grep or a script file.
-  > - A file you write yourself is written with Write or Edit, or as a script file. No heredoc.
+  > - A file you write yourself is written with Write or Edit, or as a script file. No heredoc, `node -e`, `python -c` or `sed -i`.
+  > - A file at a revision: `git show <rev>:<path> > <file>`, in Bash; `--output=` leaves that file empty.
 
 - **Issues:** the brief pastes the tracker's read command (the tracker doc's **Read an issue**). One call per issue.
 - **Writing:** what the agent writes is plain and short, each thing once.
-- **Scratch:** one folder the brief names, `.run/<role>-<ticket>/`. Make it first, write only there, delete it after the report. An agent that commits nothing runs without worktree isolation: Claude Code removes an unchanged worktree, its scratch with it.
+- **Scratch:** one folder the brief names, `.run/<role>-<ticket>/`, inside the agent's own worktree, never another checkout's. Make it first, write only there, delete it after the report. An agent that commits nothing runs without worktree isolation: Claude Code removes an unchanged worktree, its scratch with it.
+- **Isolated:** in an agent launched with worktree isolation, Claude Code refuses (seen 2026-10-26) a Write outside its worktree and any `cmd` call; it runs Bash `rm <link>` without `-r`, PowerShell `[System.IO.Directory]::Delete(<link>, $false)` and a script file run by its path.
+- **Report:** the agent's final message, as text; the session saves it whole. No report file.
 - **Keep changes:** discard nothing (no `git checkout --`, restore or stash).
 - **Plugin path:** the brief writes out the plugin's folder for `${CLAUDE_PLUGIN_ROOT}`; a Bash call has none.
 
@@ -24,27 +28,28 @@ What a slice's subagents are told: implementers, the merger, the code-review axe
 
 The plugin's green, `node ${CLAUDE_PLUGIN_ROOT}/scripts/green.mjs`: the project's commands file's steps and the structure check, then the tested tree stamped; a stamped tree runs nothing; a tree differing from a stamped one only in files no step reads runs its doc tests alone.
 
-- **The session's:** run once, before the merge, in the worktree holding the PR's head. A red one goes to a fix agent (the session itself in a slice it built under `/implement`), then runs again.
+- **The session's:** run once, before the merge, in the worktree holding the PR's head. A red one on test files is rerun once, `green.mjs --rerun-failed`, which refuses a failed file reaching the change; a red the rerun repeats or refuses goes to a fix agent (the session itself in a slice it built under `/implement`), then the green runs again.
 - **Builders, fix rounds and mergers** run the suites their change touches (Builders, **Build**), never the green.
 - **Plainly:** a green or a suite runs in the foreground, with no redirect, wrapper or capture, its output read from the result. One expected to outlast the call's cap (600 s; a subagent's 180 s) starts in the background: its end awaited on the notice, never polled, then its output file read whole, once. Nothing is edited until it ends.
-- **Report:** the output's last lines, and the exit code where the output does not end on it.
+- **Report:** the output's last lines, and the exit code where the output does not end on it. A rerun's stamped line, naming its files, goes in the PR body's Evidence.
 
-## Red-before, same-cases and reader-tests
+## Borrow-install, red-before, same-cases and reader-tests
 
 The plugin's, run in the worktree; `--help` for the rest.
 
+- **Borrow-install:** `node ${CLAUDE_PLUGIN_ROOT}/scripts/borrow-install.mjs` links the main checkout's install into a linked worktree with none, while both checkouts' `package-lock.json` beside it match. It says what it did in one line; exit 1 says where to install.
 - **Red-before:** `node ${CLAUDE_PLUGIN_ROOT}/scripts/red-before.mjs <commit> <test file> ...` runs today's named test files on the commit's code and prints each case with its outcome. A new file they import (a helper, a fixture) is named beside them, since red-before lays only the files it is named.
 - **Same-cases:** `node ${CLAUDE_PLUGIN_ROOT}/scripts/same-cases.mjs <commit> [test file ...]` runs them on the commit and on the working tree, and says same outcomes or each case whose outcome changed.
-- **Reader tests:** `node ${CLAUDE_PLUGIN_ROOT}/scripts/reader-tests.mjs [--run] [file ...]` lists the reader tests of the named files, else of the uncommitted change: the test files whose own text names a file's path or one of its exported names. `--run` runs them. It is not the green and writes no stamp.
+- **Reader tests:** `node ${CLAUDE_PLUGIN_ROOT}/scripts/reader-tests.mjs [--run] [file ...]` lists the reader tests of the named files, else of the uncommitted change: where `structure.json` records the project's edges, the test files reaching a file through its importers up to the top, by import, by path or through a test helper, each line naming the file it comes through; else the test files whose own text names a file's path or one of its exported names. `--run` runs them. It is not the green and writes no stamp.
 
 ## Builders
 
 An implementer subagent, a fix round, or the session building a slice under `/implement` or fixing it.
 
 - **Launched at once:** each builder brief, fix rounds too, launches as soon as it is written; the human gets a short summary of it as it starts. Merger briefs get none.
-- **Start:** fetch, then reset your own branch onto origin's tip of the integration branch (the PR's branch in a fix round): the branch your worktree was given, or the branch of its own that the session building a slice under `/implement`, or fixing it, works on. Check out no other branch.
+- **Start:** fetch, then reset your own branch onto origin's tip of the integration branch (the PR's branch in a fix round): the branch your worktree was given, or the branch of its own that the session building a slice under `/implement`, or fixing it, works on. Check out no other branch. Then run borrow-install, before any suite or the structure command.
 - **Push:** `git push origin HEAD:<branch>` to the branch the brief names (the session building a slice under `/implement`, or fixing it: its own branch); no force push. A brief that names none: push nothing.
-- **Build:** with the `tdd` skill. The suites your change touches are `reader-tests`' list and, for a file inside a deep module, the suites reaching its entry (Grep): run them by case id while you work, whole at the end.
+- **Build:** with the `tdd` skill. The suites your change touches are `reader-tests`' list: run them by case id while you work, whole at the end.
 - **Red first:** quote each case's line from red-before on the base.
   - Green there: report it as a guard, and keep it.
   - Red only because its file or the entry it calls is missing, or because the base refuses its input for another reason: not red; report it apart, with the reason the base gave.
@@ -57,7 +62,7 @@ An implementer subagent, a fix round, or the session building a slice under `/im
 
 ### Merger
 
-- Open origin's tip of the integration branch detached. Never check the name out.
+- Open origin's tip of the integration branch detached. Never check the name out. Then run borrow-install.
 - Read the implementer's commits (Reviews, **Diff**) against Builders, **Commits**; a break is reported, not merged.
 - Merge one implementer's branch as Builders' **Finish** says. Keep both sides' intent through a conflict.
 - Before the merge's commit, compare the merged tree with the ticket's tip (`git diff --cached --quiet <tip>`). Equal: run nothing, and quote the builder's same-cases and suites lines as the proof. Different: run the suites the merge touches, `reader-tests`' list, whole. Push to the integration branch by name; report like an implementer, saying which and why.
@@ -76,6 +81,7 @@ An implementer subagent, a fix round, or the session building a slice under `/im
 - **Moved text:** for a ticket that moves or merges prose, the Spec axis places every source line, section by section, old line → new line or none; a moved line is placed by the diff, a changed one by hand (**Diff**); each none is a finding.
 - **Writer's lines:** a reader of another program's output is read against every form that program's source prints; the review lists them and names any left to the reader's fallback.
 - **Client behaviour:** test it as a user reaches it: a real keypress, a real control. A handler called from script is reported as scripted.
-- **Diff:** `--stat` first, then the diff written with `--color=always --color-moved=dimmed-zebra` into the scratch folder (`--output=`) and read in parts: a dim or bold line moved, a red or green one changed, found with the Grep tool and `^\x1b\[(31|32)m`. The same for one commit's `git show`, a merge commit's with `--diff-merges=first-parent`. A file at a revision: `git show <rev>:<path> > <scratch file>`, in Bash; `--output=` leaves that file empty.
+- **Diff:** `--stat` first, then the diff written with `--color=always --color-moved=dimmed-zebra` into the scratch folder (`--output=`) and read in parts: a dim or bold line moved, a red or green one changed, found with the Grep tool and `^\x1b\[(31|32)m`. The same for one commit's `git show`, a merge commit's with `--diff-merges=first-parent`.
 - **Commits:** the Standards axis checks them against Builders.
+- **Names:** the Standards axis lists every name the diff adds, each read against `${CLAUDE_PLUGIN_ROOT}/ROADKEEPER_STANDARDS.md`'s Names.
 - **Security:** the bar is `${CLAUDE_PLUGIN_ROOT}/ROADKEEPER_STANDARDS.md`'s and `CODING_STANDARDS.md`'s `## Security`, and the accepted rows of `docs/roadkeeper/threats.md`. The axis reads the branch's diff against the default branch as **Diff** says and applies `security-review`'s method to it: the skill itself reads the session's own checkout, so from a review worktree it sees no diff.

@@ -99,3 +99,25 @@ export function worktreeInstall(root, folder) {
   linkFolder(root, main, folder);
   return { from: main };
 }
+
+// Borrow the install of the worktree at `root`, its install folder `folder` (null: the stack has none), and say how:
+// { code, line }. 0 with an install there to use: linked in now, already linked, the worktree's own, the main checkout's
+// own, or none to borrow; 1 with none: the pins differ (worktreeInstall's line, a link laid before removed), the main
+// checkout has none, or the link could not be laid.
+export function borrowInstall(root, folder) {
+  if (!folder) return { code: 0, line: "the stack has no install to borrow" };
+  const { linked } = checkouts(root);
+  const path = join(root, folder);
+  const before = lexists(path);
+  const { from, said } = worktreeInstall(root, folder);
+  if (said) return { code: 1, line: said };
+  if (!linked) return before ? { code: 0, line: `the main checkout uses its own ${folder}` } : sayMainHasNone(folder);
+  if (!from) return sayMainHasNone(folder);
+  if (from === root) return { code: 0, line: `${folder} is this worktree's own` };
+  if (before) return { code: 0, line: `${folder} already linked from the main checkout` };
+  if (!lexists(path)) return { code: 1, line: `${folder} could not be linked from the main checkout; install in this worktree` };
+  return { code: 0, line: `${folder} linked from the main checkout` };
+}
+
+// say that the main checkout holds no install to lend
+const sayMainHasNone = (folder) => ({ code: 1, line: `the main checkout has no ${folder}: install in the main checkout` });

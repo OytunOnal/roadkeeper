@@ -66,7 +66,7 @@ flowchart TD
 - **After launch:** `/roadkeeper:steward` takes each report: a bug is traced to the promise the product broke, with fixes offered for you to pick; an idea becomes a candidate.
 - **The Road:** one page drawn from the tracker and the code's structure, showing progress by version, what waits on you, and the code's levels and modules.
 - **Architecture:** the code follows clean architecture's dependency rule, the domain at the centre and every dependency pointing inward, and is grouped into deep modules: a folder behind one entry file, everything inside private, on one level or several, nested as it grows. The structure check holds both before every merge in JavaScript, TypeScript, Astro and Python code, The Road draws them, and each version's close reads the code against them, so what an agent writes stays legible as it grows. [The rules](skills/slice/references/structure.md).
-- **While it works:** hooks run your linter on every file written and tell you at each session start what waits on you; a change to your documents alone runs only the tests that read them, so it goes green in seconds.
+- **While it works:** hooks run your linter on every file written, keep each of the agent's shell calls to one plain command, and tell you at each session start what waits on you. A builder runs only the tests that reach the files its change touches, and a change to your documents alone runs only the tests that read them, so it goes green in seconds. A green that went red only under load reruns just the failed test files; a fresh worktree borrows your main checkout's install; and every step stops only when its work truly hangs, however large the project.
 
 What changed in each version: the [releases](https://github.com/OytunOnal/roadkeeper/releases).
 
@@ -79,7 +79,7 @@ A plugin runs code in your session. Roadkeeper's are the hooks under `scripts/` 
 - `merge-guard` reads the pull request a `gh` merge names.
 - The check at write runs your project's linter, as your `docs/roadkeeper/commands.json` names it.
 
-Nothing else leaves your machine. Genesis or adopt sets up the project's tools, and with them your `.gitignore` names the snapshot ([Ignored files](skills/slice/references/project-tools.md#ignored-files)). Before you install it, read [`scripts/hooks.json`](scripts/hooks.json), which says when each hook runs; then the opening comment of each of the seven files it names, which says what that hook reads, writes and refuses: [`nudge`](scripts/nudge.mjs), [`road-redraw`](scripts/road-redraw.mjs), [`git-alone`](scripts/git-alone.mjs), [`no-heredoc`](scripts/no-heredoc.mjs), [`merge-guard`](scripts/merge-guard.mjs), [`check-at-write`](scripts/check-at-write.mjs), [`skills-pointer`](scripts/skills-pointer.mjs); then [`scripts/_hook.mjs`](scripts/_hook.mjs), the code they share.
+Nothing else leaves your machine. Genesis or adopt sets up the project's tools, and with them your `.gitignore` names the snapshot ([Ignored files](skills/slice/references/project-tools.md#ignored-files)). Before you install it, read [`scripts/hooks.json`](scripts/hooks.json), which says when each hook runs; then the opening comment of each of the six files it names, which says what that hook reads, writes and refuses: [`nudge`](scripts/nudge.mjs), [`road-redraw`](scripts/road-redraw.mjs), [`shell-block`](scripts/shell-block.mjs), [`merge-guard`](scripts/merge-guard.mjs), [`check-at-write`](scripts/check-at-write.mjs), [`skills-pointer`](scripts/skills-pointer.mjs); then [`scripts/_hook.mjs`](scripts/_hook.mjs), the code they share.
 
 1. In a terminal, install the skills Roadkeeper calls. This installs all of Matt Pocock's skills, for every project on your machine (`-g`), without asking (`-y`):
 
@@ -116,13 +116,12 @@ It works when `docs/roadkeeper/road.html` opens with your project's name on it. 
 A change to one of these that makes you act, a file to move or a command to type differently, comes only in a major version, and its release says what to do.
 
 - **Skills**, each `/roadkeeper:<name>`: `adopt`, `brainstorm`, `design-critique`, `devils-advocate`, `genesis`, `idea`, `launch`, `market-research`, `product-critique`, `retro-spec`, `road`, `slice`, `steward`.
-- **Commands**, `node <roadkeeper>/scripts/<name>.mjs` in your project's root, `<roadkeeper>` being the folder Claude Code installed the plugin into, each with its usage in its header: `copy-lint-rules`, `green`, `reader-tests`, `red-before`, `road`, `same-cases`, `structure`, `structure-check`, `structure-plan`, `structure-stamp`, `version-forecast`.
+- **Commands**, `node <roadkeeper>/scripts/<name>.mjs` in your project's root, `<roadkeeper>` being the folder Claude Code installed the plugin into, each with its usage in its header: `borrow-install`, `copy-lint-rules`, `green`, `reader-tests`, `red-before`, `road`, `same-cases`, `structure`, `structure-check`, `structure-plan`, `structure-stamp`, `version-forecast`.
 - **General rules**, `ROADKEEPER_STANDARDS.md` at Roadkeeper's root: the rules every project's review holds. A project changes one only by a departure, a line under `## Departures` in its `CODING_STANDARDS.md` naming the rule and why.
 - **Hooks**, each acting only in a project holding `docs/roadkeeper/`:
   - `nudge`, at session start, counts what waits on you, rewriting `issues.json` and, on the default branch only, redrawing The Road;
   - `road-redraw`, after a command that writes to the tracker, rewrites `issues.json` and redraws The Road in the background, on the default branch only;
-  - `git-alone`, before a shell command in one of the project's linked worktrees, refuses git chained to other commands;
-  - `no-heredoc`, before a shell command, refuses an interpreter fed its program through a heredoc or here-string;
+  - `shell-block`, before Claude runs a shell command (its Bash or PowerShell tool; your own terminal is never read), keeps each call to one plain command, since agents lose time and context on the rest: it refuses commands chained together (`&&`, `;`, `|`, `$( )`), an interpreter given its program inline (`node -e`, `python -c`) or through a heredoc, `sed -i`, and `git show <rev>:<path> --output=`, which leaves the file empty and prints it whole, each refusal naming the form that works;
   - `merge-guard`, before a shell command, refuses `gh pr merge`, or a push to the default branch or a tag, until the tree that lands has run green;
   - `check-at-write`, after Write or Edit, refuses the written file's breaches of your project's linter;
   - `skills-pointer`, at every session start and after a compact or a clear, tells the session to work from Roadkeeper's skill files.
@@ -143,8 +142,8 @@ A change to one of these that makes you act, a file to move or a command to type
 
 The next versions, by their titles:
 
-- v3.2.0 — A change runs only the tests it touches, and a red from load reruns only what failed
 - v3.2.1 — Roadkeeper's tools say what really went wrong
+- v3.2.2 — Roadkeeper's own tests and records cost a builder less
 - v3.3.0 — Roadkeeper's own tools and rules cost a session less
 - v3.4.0 — Roadkeeper's tools say what they did, and a slice runs without a hand
 - v3.4.1 — Roadkeeper's skills and the Architecture tab read short and plain
@@ -152,7 +151,7 @@ The next versions, by their titles:
 - v3.6.0 — Every project's checks fit its code
 - v3.6.1 — Roadkeeper's own checks are kept once and prove a change in one run
 - v3.6.2 — Roadkeeper's tools and tests split before they grow
-- v3.7.0 — The Road shows a project's decisions, its words and a slice's plan
+- v3.7.0 — The owner decides on a drawn page: the look before a merge, a slice's plan, the project's decisions and words
 
 ## Proven on
 

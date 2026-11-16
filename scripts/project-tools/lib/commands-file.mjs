@@ -57,6 +57,9 @@ function brokenField(parsed) {
 // Whether a project's `commands` (readCommands') declare doc tests: `docTests` given, `[]` counting.
 export const declaresDocTests = (commands) => commands.docTests !== undefined;
 
+// Whether a project's `commands` (readCommands') name a doc test: `docTests` holding one at least.
+export const namesDocTest = (commands) => (commands.docTests ?? []).length > 0;
+
 // { commands } with `readByNothing`, `install` and `filesPerRun` defaulted, or { refused }, the line saying why the
 // project at `root` has none.
 export function readCommands(root) {

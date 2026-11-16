@@ -6,6 +6,7 @@
 // step reads. A file pattern reads through the `matches` the entry hands in. Reads the commands file, the tree's file
 // list and its test files' text; runs only the doc tests, through test-run.mjs.
 
+import { shortHash } from "../../_git.mjs";
 import { plural } from "../../_text.mjs";
 import { declaresDocTests, readCommands } from "./commands-file.mjs";
 import { shownName, workingFile, workingFiles } from "./commit-tree.mjs";
@@ -13,7 +14,7 @@ import { readByNothing } from "./read-by-nothing.mjs";
 import { readerScan } from "./reader-scan.mjs";
 import { COPY_COMMAND, RULES_COPY, copyDiffers } from "./rules-copy.mjs";
 import { isTestsStep } from "./steps-run.mjs";
-import { testFileMatcher, testSetup, testsStepPasses, worktreeTests } from "./test-run.mjs";
+import { testFileMatcher, testSetup, testsStepRun, worktreeTests } from "./test-run.mjs";
 
 // The commands file of the project at `root` and, where a `{tests}` step or `docTests` needs it, its tests' setup
 // (test-run.mjs): { commands, tests }, or { code }, the green's exit code once the line saying why is handed to `say`:
@@ -72,9 +73,9 @@ export function docTestListsPass({ root, commands, named, matches }, say) {
 
 // A tree differing from the green tree `near` only in files no step reads: its doc tests alone run as the `{tests}`
 // step runs its files (test-run.mjs), none named running nothing. `run`: { tests, files, tree, near }, `tests`
-// testSetup's. A promise of whether they passed.
-export async function docTestsPass({ tests, files, tree, near }, say) {
-  say(`green: this tree (${tree.slice(0, 12)}) differs from the green tree ${near.slice(0, 12)} only in files no step ` +
+// testSetup's. A promise of { passes, failed }, testsStepRun's.
+export async function docTestsRun({ tests, files, tree, near }, say) {
+  say(`green: this tree (${shortHash(tree)}) differs from the green tree ${shortHash(near)} only in files no step ` +
     `reads; ${plural(files.length, "doc test")} run, no other step`);
-  return files.length ? testsStepPasses(tests, say, files) : true;
+  return files.length ? testsStepRun(tests, say, files) : { passes: true, failed: [] };
 }

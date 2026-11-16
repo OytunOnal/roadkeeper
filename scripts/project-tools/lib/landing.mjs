@@ -6,7 +6,7 @@
 // writes nothing and runs nothing else.
 
 import { fileURLToPath } from "node:url";
-import { git } from "../../_git.mjs";
+import { git, shortHash } from "../../_git.mjs";
 import { stampedRecord } from "./green-stamp.mjs";
 import { nearStamp } from "./near-stamp.mjs";
 
@@ -45,7 +45,7 @@ const remoteHolds = (root, ref, commit) => { try { git(["merge-base", "--is-ance
 
 // The refusal for a commit that is not green, by its state (landingState).
 function refusalFor(state, commit) {
-  const short = commit.slice(0, 12);
+  const short = shortHash(commit);
   if (state === "missing") return `commit ${short} is not in this clone; fetch it, then ${RUN_GREEN}`;
   if (state === "unrun") return `commit ${short} has not run green; ${RUN_GREEN}`;
   return `commit ${short} has not run green, and differs from every green tree in files the green reads; ${RUN_GREEN}`;

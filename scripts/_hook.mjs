@@ -1,12 +1,13 @@
 // @level infrastructure
-// Roadkeeper — what the hooks share: the hook's input, the shell command a PreToolUse hook judges, the repository it
-// runs in, and The Road drawn on the default branch.
+// Roadkeeper — what the hooks share: the hook's input, the shell command a PreToolUse hook judges and the run of such a
+// hook, the repository it runs in, and The Road drawn on the default branch.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { recordsDir } from "./_files.mjs";
 import { git } from "./_git.mjs";
+import { shellCommands } from "./_shell.mjs";
 
 const CAP = 1024 * 1024; // bytes of stdin a hook reads; past it a PreToolUse hook lets the command through, said
 
@@ -44,7 +45,7 @@ export function letPass(hook, why) {
 // command's folder: the input's `cwd` when a non-empty string, else the hook's own. null lets the call pass: silently
 // for any other tool; said on stderr when the input cannot be read — stdin unreadable or over the cap, not JSON, not
 // the hook's shape, no command string.
-export function readShellCall(hook) {
+function readShellCall(hook) {
   const pass = (why) => { letPass(hook, why); return null; };
   let raw;
   try { raw = readCapped(); } catch (e) { return pass(`stdin unreadable (${e.code || "error"})`); }
@@ -60,6 +61,23 @@ export function readShellCall(hook) {
   return { tool, command, input, cwd };
 }
 
+// Runs a PreToolUse hook that judges a shell command; returns its exit code. It reads the call (readShellCall), lets it
+// pass outside a Roadkeeper project, found from the command's folder (projectRecordsOrNull), unless `scopesItself`
+// (the judgment finds the repository it acts on), reads the command's simple commands (shellCommands), and asks
+// `judge({ tool, command, cwd, commands })` for a refusal: its words said on stderr after the hook's name, exit 2;
+// null lets the call pass, 0. A command that cannot be read lets it pass, said on stderr.
+export async function runShellHook(hook, judge, { scopesItself = false } = {}) {
+  const call = readShellCall(hook);
+  if (!call) return 0;
+  if (!scopesItself && !projectRecordsOrNull(call.cwd)) return 0;
+  let commands;
+  try { commands = shellCommands(call.command, { powershell: call.tool === "PowerShell" }); } catch (e) { return letPass(hook, `the command could not be read (${e.name})`); }
+  const refusal = await judge({ ...call, commands });
+  if (!refusal) return 0;
+  process.stderr.write(hookMessage(hook, refusal) + "\n");
+  return 2;
+}
+
 // The hook's JSON from stdin, always an object: input that is unreadable, over the cap, not JSON, or JSON that is not
 // an object, reads as {}.
 export function readInput() {
@@ -71,18 +89,16 @@ export function readInput() {
 // whether a directory is a git directory, read from the filesystem, never from git's words
 const gitDirHere = (dir) => existsSync(join(dir, "HEAD")) && existsSync(join(dir, "objects")) && existsSync(join(dir, "refs"));
 
-// The first answer `ask` gives, asked of the folder and then each one above it, at most `levels` folders; null when it
-// gives none.
-export function upwards(dir, ask, levels = Infinity) {
+// The first answer `ask` gives, asked of the folder and then each one above it; null when it gives none.
+function upwards(dir, ask) {
   let cur = resolve(dir);
-  for (let k = 0; k < levels; k++) {
+  for (;;) {
     const answer = ask(cur);
     if (answer) return answer;
     const up = dirname(cur);
     if (up === cur) return null;
     cur = up;
   }
-  return null;
 }
 
 const directoryExists = (cwd) => Boolean(cwd) && existsSync(cwd);

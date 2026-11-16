@@ -5,15 +5,19 @@
 // stamps it in the same run, so `files`, `loose` and `digest` are current after one run. What it reads, and what stops
 // it, is the structure module's (scripts/structure/: `graph`, `parsers`); its dependency-cruiser, TypeScript and Astro
 // compiler come from the node_modules at the project root or in the --packages folder, its Python from the PATH
-// (docs/adr/0003).
+// (docs/adr/0003). In a linked worktree with none in that folder, the main checkout's is linked in first while the two
+// checkouts' package-lock.json beside it match byte for byte, as borrow-install.mjs links it (scripts/project-tools/);
+// otherwise it stops, saying to install in the worktree.
 //
-// Writes: docs/roadkeeper/structure.json only; runs no program but the PATH's Python 3 on a project holding `.py` files, and
-// asks git nothing. Exits 1, writing nothing, on a stop, which it prints: --packages naming no folder, or the module's.
-// Before its closing line it prints the count of Python imports found in no search place and not in the standard
-// library, when there is any; the count changes no exit code.
+// Writes: docs/roadkeeper/structure.json, and that install's link; runs no program but the PATH's Python 3 on a project
+// holding `.py` files, and asks git for the worktree and its main checkout only when the project holds a JavaScript,
+// TypeScript or Astro file. Exits 1, writing nothing, on a stop, which it prints: --packages naming no folder, or the
+// module's. Before its closing line it prints the count of Python imports found in no search place and not in the
+// standard library, when there is any; the count changes no exit code.
 
 import { writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { worktreeInstall, worktreeRoot } from "./project-tools/project-tools.mjs";
 import { graph, parsers } from "./structure/structure.mjs";
 
 const root = process.cwd();
@@ -27,11 +31,22 @@ function packagesFrom(argv) {
   return given ? { dir: resolve(root, given), given } : { stop: "--packages names no folder" };
 }
 
+// The main checkout's node_modules borrowed into the packages folder `dir` of a linked worktree with none: null, or
+// { stop } saying to install in the worktree. A folder outside the worktree, or no worktree, borrows nothing.
+function borrowInto(dir) {
+  const top = worktreeRoot(root);
+  if (!top) return null;
+  const folder = relative(top, join(dir, "node_modules"));
+  if (folder.startsWith("..") || isAbsolute(folder)) return null;
+  const { said } = worktreeInstall(top, folder.split(sep).join("/"));
+  return said ? { stop: said } : null;
+}
+
 // what the run ends on: { line } once structure.json is written, or { stop, refused }
 async function run() {
   const from = packagesFrom(process.argv);
   if (from.stop) return from;
-  const read = await graph(root, parsers(from.dir, { given: from.given }).parsers);
+  const read = await graph(root, parsers(from.dir, { given: from.given, borrow: () => borrowInto(from.dir) }).parsers);
   if (read.stop) return read;
   writeFileSync(join(root, "docs", "roadkeeper", "structure.json"), read.text);
   return read;

@@ -216,9 +216,21 @@ _Avoid_: verified, sourced
 Roadkeeper's measurement of a skill or agent file on a golden set.
 _Avoid_: eval suite, benchmark
 
+**Shell block**:
+The rules every brief opens with on how a shell call is written: one command per call, literal arguments, and files written by the editor or a script file. In the session and in every agent, Roadkeeper refuses the commonest breaks: commands chained together, a program given inline or through a heredoc, a file rewritten in place, and a file at a revision saved the way that leaves it empty. Each refusal names the form that works.
+_Avoid_: shell rules, one-command rule
+
 **Green**:
-The project's whole check passing at once: every suite, the check command and the plugin check; a tree differing from a stamped one only in files no step reads runs its doc tests alone. Nothing is merged that is not green.
+The project's whole check passing on one tree: every suite, the check command and the plugin check, in one run or after one rerun; a tree differing from a stamped one only in files no step reads runs its doc tests alone. Nothing is merged that is not green.
 _Avoid_: CI, test run
+
+**Red run**:
+The record a green that went red keeps for its tree: the test files it failed, or the step that went red, and whether the tree's one rerun has run.
+_Avoid_: red record, failed green
+
+**Rerun**:
+The test files of a tree's red run, run again alone, once, when none reaches what the change touched; when they pass, the tree is green and its green stamp names them.
+_Avoid_: retry, second green
 
 **Green stamp**:
 The record of a tree that ran green, shared by every worktree of a clone, so neither a green run nor a merge tests a stamped tree again.
@@ -233,12 +245,20 @@ A test file that reads one of the project's documents, a file the green otherwis
 _Avoid_: docs check, document test
 
 **Reader test**:
-A test file whose own text names a changed file's path or one of its exported names: the tests a change touches, run before its commit; the full green still decides.
+A test file that reaches a changed file, directly or through the files and test helpers that import or name it: the tests a change touches, run before its commit; the full green still decides.
 _Avoid_: guard suite, related test
+
+**Test helper**:
+A file only test files and other test helpers import: a fixture, a shared case printer; the code under test, which other code imports too, is none.
+_Avoid_: test util, support file
 
 **Sibling**:
 A folder outside a project's root that its manifest names as a dependency by its path; a run on an older commit finds it beside the main checkout.
 _Avoid_: neighbour, external package, local dependency
+
+**Borrowed install**:
+The main checkout's installed packages, linked into a linked worktree that has none while both pin the same packages, so the worktree runs without installing again. Not ADR 0003's sense of borrowing, where the structure command uses the project's packages instead of shipping its own.
+_Avoid_: shared install, linked node_modules
 
 **Stack**:
 The word a project's commands file names, saying which formats Roadkeeper reads its test runs and linter in, and which defaults it starts from.

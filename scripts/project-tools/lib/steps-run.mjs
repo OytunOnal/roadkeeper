@@ -19,22 +19,28 @@ export const isTestsStep = (step) => step.length === 1 && step[0] === TESTS_STEP
 // The last TAIL_LINES lines of a run's output, each indented.
 export const tailLines = (tail) => tail.replace(/\r\n?/g, "\n").trimEnd().split("\n").slice(-TAIL_LINES).map((l) => "     " + controlsReplaced(l.replace(/\t/g, "  ")));
 
-// Each step run in order from the tree's root, a line each; stops at the first red one, its last lines shown.
-// Whether every step passed. `run`: { root, steps, testsStep }, `testsStep(say)` (none: a `{tests}` step runs as a
-// program) a promise of whether the project's tests passed, its lines handed to `say`.
-export async function stepsPass({ root, steps, testsStep }, say) {
+// The k-th step of the list (from 0) as its line names it.
+export const stepNamed = (steps, k) => `step ${k + 1} of ${steps.length}  ${shown(steps[k])}`;
+
+// Each step from the `from`-th (0: the first) run in order from the tree's root, a line each; stops at the first red
+// one, its last lines shown. A promise of { at, tests }: `at` that step's index, -1 when every step passed; `tests` the
+// last `{tests}` step's run, null when none ran. `run`: { root, steps, testsStep, from }, `testsStep(say)` (none: a
+// `{tests}` step runs as a program) a promise of the project's tests' run, { passes, … }, its lines handed to `say`.
+export async function firstRedStep({ root, steps, testsStep, from = 0 }, say) {
   const env = commandEnv(root);
-  for (const [k, step] of steps.entries()) {
+  let tests = null;
+  for (let k = from; k < steps.length; k++) {
+    const step = steps[k];
     if (testsStep && isTestsStep(step)) {
-      if (await testsStep(say)) continue;
-      return false;
+      tests = await testsStep(say);
+      if (tests.passes) continue;
+      return { at: k, tests };
     }
     const ran = await runCommand(step, root, env);
-    const at = `step ${k + 1} of ${steps.length}  ${shown(step)}`;
-    if (ran.passed) { say(`PASS ${at}  (${ran.seconds.toFixed(1)} s)`); continue; }
-    say(`FAIL ${at}  ${ran.why}`);
+    if (ran.passed) { say(`PASS ${stepNamed(steps, k)}  (${ran.seconds.toFixed(1)} s)`); continue; }
+    say(`FAIL ${stepNamed(steps, k)}  ${ran.why}`);
     if (ran.tail.trim()) for (const line of tailLines(ran.tail)) say(line);
-    return false;
+    return { at: k, tests };
   }
-  return true;
+  return { at: -1, tests };
 }

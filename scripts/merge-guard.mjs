@@ -21,66 +21,29 @@
 // holds no Roadkeeper docs folder or no commands file; a commands file it cannot read refuses, naming why. Not read, and so
 // passed: a push or merge inside an evaluated string (`eval`, `bash -c`, `sh -c`, `Invoke-Expression`), a variable or
 // a script; the guard catches a session's mistake, not a session hiding a push (docs/roadkeeper/threats.md, row 12).
-// Only reads: its call through `readShellCall` (_hook.mjs), which bounds the input; git and gh, each an argument list
+// Only reads: its call through `runShellHook` (_hook.mjs), which bounds the input; git and gh, each an argument list
 // found on the PATH's absolute folders. Runs no green and writes nothing. A command it cannot read lets it pass, said on
 // stderr.
 
 import { execFileSync } from "node:child_process";
 import { basename, dirname, resolve } from "node:path";
 import { OBJECT_HASH, findProgram, git } from "./_git.mjs";
-import { branches, hookMessage, letPass, readShellCall, repoRoot } from "./_hook.mjs";
-import { GIT, prefixAssignments, programName, programWords, shellCommands } from "./_shell.mjs";
+import { branches, repoRoot, runShellHook } from "./_hook.mjs";
+import { GIT, gitCommand, prefixAssignments, readProgram, splitWords } from "./_shell.mjs";
 
 const GH = /^gh(?:\.exe)?$/i; // gh's name as a shell runs it
 const GH_TIMEOUT = 20000; // milliseconds gh may take to say a pull request's head: one request to GitHub
 const GH_OUTPUT_MAX = 64 * 1024; // bytes of gh's answer read: one field of JSON
 const TAGS_MAX = 1000; // tags one push may carry and be judged: a project's releases, with room
-const GIT_VALUED = new Set(["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix"]); // git's options before its command whose value is the next word
 const PUSH_VALUED = new Set(["--repo", "-o", "--push-option", "--receive-pack", "--exec"]); // push options whose value is the next word
 const MERGE_VALUED = new Set(["-b", "--body", "-F", "--body-file", "-t", "--subject", "-A", "--author-email", "--match-head-commit", "-R", "--repo"]); // gh pr merge's options whose value is the next word
 const API_VALUED = new Set(["-X", "--method", "-H", "--header", "-f", "--raw-field", "-F", "--field", "--input", "-q", "--jq", "-t", "--template", "--hostname", "-p", "--preview", "--cache"]); // gh api's options whose value is the next word
 const API_BODY = ["-f", "--raw-field", "-F", "--field", "--input"]; // gh api's options that send a body, a POST unless -X says
 const MERGE_PATH = /^\/?repos\/([^/?#]+)\/([^/?#]+)\/pulls\/(\d+)\/merge\/?(?:[?#].*)?$/; // the REST path that merges a pull request
-const ALIAS = /^alias\./i; // a git setting naming an alias
 const CONFIG_ASSIGNED = /^GIT_CONFIG_(?:KEY_\d+|PARAMETERS)$/; // the variables that hand git settings
 const NOTHING_PUSHED = ["--delete", "-d", "--dry-run", "-n"]; // push options under which no commit lands
 const BULK = ["--all", "--branches", "--mirror", "--tags"]; // push options that name the refs in place of refspecs
 const ALIAS_REFUSAL = "a git command given an alias on its command line can push under another name; run git's own command"; // fixed words
-
-// A command's words after its program: { options, positional }; each option [name, value], its value attached or, for a
-// name in `valued`, the next word.
-function splitWords(words, valued) {
-  const options = [];
-  const positional = [];
-  for (let k = 0; k < words.length; k++) {
-    const w = words[k];
-    if (w === "--") { positional.push(...words.slice(k + 1)); break; }
-    if (!w.startsWith("-") || w === "-") { positional.push(w); continue; }
-    const [name, ...value] = w.split("=");
-    if (valued.has(name) && !value.length) options.push([name, words[++k] ?? ""]);
-    else options.push([name, value.join("=")]);
-  }
-  return { options, positional };
-}
-
-// A git command line's words after git: { at, place, alias, command, rest }: the -C folders in order; `place`, its
-// --git-dir and --work-tree; whether a -c or --config-env setting names an alias; git's command and its words.
-function gitCommand(words) {
-  const at = [];
-  const place = {};
-  let alias = false;
-  let k = 0;
-  for (; k < words.length && words[k].startsWith("-"); k++) {
-    const [name, ...attached] = words[k].split("=");
-    let value = attached.join("=");
-    if (!attached.length && GIT_VALUED.has(name)) value = words[++k] ?? "";
-    if (name === "-C") at.push(value);
-    if (name === "--git-dir") place.gitDir = value;
-    if (name === "--work-tree") place.workTree = value;
-    if (name === "-c" || name === "--config-env") alias ||= ALIAS.test(value);
-  }
-  return { at, place, alias, command: words[k], rest: words.slice(k + 1) };
-}
 
 // A push's words read: { remote, refspecs, flags }; `flags`, the options' names, a short cluster's letter by letter.
 function readPush(words) {
@@ -124,8 +87,7 @@ const aliasAssigned = (assigned) => assigned.some(([name, value]) => CONFIG_ASSI
 // A simple command's landing: { merge } (gh pr view's arguments), { push, at, place }, { alias, at, place }, or null when
 // it lands nothing.
 function landingCommand(words) {
-  const [program, ...rest] = programWords(words, { wrappers: true });
-  const name = programName(program);
+  const { name, args: rest } = readProgram(words);
   if (GH.test(name)) {
     const merge = rest[0] === "pr" && rest[1] === "merge" ? readMerge(rest.slice(2)) : rest[0] === "api" && readApiMerge(rest.slice(1));
     return merge ? { merge } : null;
@@ -268,21 +230,16 @@ function judged(tools, found, cwd) {
   return refusal ?? tools.landingRefusal(root, { remote, home, commits, patterns: rules.patterns });
 }
 
-async function main() {
-  const call = readShellCall("merge-guard");
-  if (!call) return 0;
-  let found;
-  try {
-    found = shellCommands(call.command, { powershell: call.tool === "PowerShell" }).map((s) => landingCommand(s.words)).filter(Boolean);
-  } catch (e) { return letPass("merge-guard", `the command could not be read (${e.name})`); }
-  if (!found.length) return 0;
-  const { cwd } = call;
+// The refusal of the first landing command among a command line's that is not green; null when every one passes.
+async function judgeLandings({ commands, cwd }) {
+  const found = commands.map((s) => landingCommand(s.words)).filter(Boolean);
+  if (!found.length) return null;
   const tools = await import("./project-tools/project-tools.mjs"); // loaded only for a landing: every other call stays fast
   for (const one of found) {
     const refusal = judged(tools, one, cwd);
-    if (refusal) { process.stderr.write(hookMessage("merge-guard", refusal) + "\n"); return 2; }
+    if (refusal) return refusal;
   }
-  return 0;
+  return null;
 }
 
-process.exitCode = await main();
+process.exitCode = await runShellHook("merge-guard", judgeLandings, { scopesItself: true });

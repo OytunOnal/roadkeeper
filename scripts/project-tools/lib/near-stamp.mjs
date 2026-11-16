@@ -1,19 +1,23 @@
 // @level infrastructure
 // Roadkeeper — the near stamp: the green tree a tree differs from only in files the green does not read
 // (read-by-nothing.mjs, its own inputs never among them), the one comparison the green and the landing check share.
-// Asks git (scripts/_git.mjs) and reads the clone's green stamp (green-stamp.mjs); writes nothing. A tree git does not
+// Asks git (scripts/_git.mjs), its listing bounded as a git listing is (commit-tree.mjs, listingLimit), and reads the
+// clone's green stamp (green-stamp.mjs); writes nothing. A tree git does not
 // hold, or a difference over git's output cap or CHANGED_MAX files, does not count.
 
-import { git } from "../../_git.mjs";
+import { gitWithin } from "../../_git.mjs";
+import { listingLimit } from "./commit-tree.mjs";
 import { stampedTrees } from "./green-stamp.mjs";
 import { readByNothing } from "./read-by-nothing.mjs";
 
 const CHANGED_MAX = 10000; // files changed between two trees read: a docs-only change is a handful
 
-// The files changed between two trees, or null when git cannot say or they are over CHANGED_MAX.
-function changedFiles(root, from, to) {
+// The files changed between two trees (a commit names its own), or null when git cannot say or they are over
+// CHANGED_MAX.
+export function changedFiles(root, from, to) {
   let out;
-  try { out = git(["diff-tree", "-r", "-z", "--name-only", "--no-renames", from, to], root); } catch { return null; }
+  const call = { timeout: listingLimit(root) };
+  try { out = gitWithin(["diff-tree", "-r", "-z", "--name-only", "--no-renames", from, to], root, call); } catch { return null; }
   const files = out.split("\0").filter(Boolean);
   return files.length > CHANGED_MAX ? null : files;
 }

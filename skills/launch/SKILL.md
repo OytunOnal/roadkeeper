@@ -96,7 +96,7 @@ Every deployment needs a rollback plan before it happens:
 ### Rollback Steps
 1. Disable feature flag (if applicable)
    OR
-1. Deploy previous version: `git revert <commit> && git push`
+1. Deploy previous version: `git revert <commit>`, then `git push`
 2. Verify rollback: health check, error monitoring
 3. Communicate: notify team of rollback
 

@@ -46,8 +46,10 @@ function entryOf(dir, sub = ".") {
 
 // The script packages loaded from the folder `dir`: { packages }, or { stop } naming the install when either is
 // missing: the project installs both, pinned; a --packages folder, `given` as typed, pins them already, so `npm ci`
-// there.
-async function loadScriptPackages({ dir, given }) {
+// there. `borrow`, when given, runs first, the caller's: null, or its { stop }.
+async function loadScriptPackages({ dir, given, borrow }) {
+  const borrowed = borrow ? borrow() : null;
+  if (borrowed) return borrowed;
   const cruiser = packageDir(dir, "dependency-cruiser"), tsDir = packageDir(dir, "typescript");
   const missing = [cruiser ? null : "dependency-cruiser", tsDir ? null : "typescript"].filter(Boolean).join(" and ");
   if (missing && given) return { stop: `${missing} not installed in the --packages folder ${printable(given)}: run \`npm ci\` there` };
@@ -71,7 +73,7 @@ async function astroCompiler(dir, given) {
 // the files split by `test`: [those it holds for, the rest], each in their order
 const splitBy = (files, test) => [files.filter(test), files.filter((f) => !test(f))];
 
-// What the script packages, loaded from `packageFolder`, { dir, given }, read of the JavaScript, TypeScript and Astro
+// What the script packages, loaded from `packageFolder`, { dir, given, borrow }, read of the JavaScript, TypeScript and Astro
 // files given: the port's `read` (dependency-graph.mjs), its `foundNowhere` empty; or a stop.
 export async function scriptParser(packageFolder, root, { files, declared }) {
   const loaded = await loadScriptPackages(packageFolder);

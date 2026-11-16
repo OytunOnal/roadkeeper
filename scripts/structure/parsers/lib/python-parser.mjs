@@ -4,22 +4,25 @@
 // declarations, `__all__` and class bases; this file resolves them by the port's rules. The interpreter is `python3`, then `python`, each from the PATH's absolute folders, the
 // first that runs the reader and reports Python 3; it runs isolated (`-I`), so no variable points the reader at the
 // project's code. The reader's output is outside data: read under OUTPUT_MAX and checked against its shape, a
-// malformed or oversized one a stop naming the reader. A file that does not parse stops in fixed words, its file, line
+// malformed or oversized one a stop naming the reader. The read is bounded at READ_TIMEOUT and READ_PER_FILE a file
+// given; one that runs out stops saying its bound. A file that does not parse stops in fixed words, its file, line
 // and Python's version: Python's message, which can quote the file's own text, is never read. Writes nothing.
 //
 // Resolution: a relative import from the file's own folder, one dot per folder up; an absolute one in the importing
-// file's folder, then the root, then `src/` where it is a folder, at the first of them where its whole dotted name
+// file's folder, then each folder above it, nearest first, as a suite putting its parent folder on `sys.path` finds a
+// shared helper, then the root, then `src/` where it is a folder, at the first of them where its whole dotted name
 // resolves, a partial match passing on to the next; `a.b` is `a/b/__init__.py` or `a/b.py`, or a folder with no
 // `__init__.py`, a namespace package; `from a import b` names `b`'s file when it is a submodule, `a`'s otherwise. A
 // namespace package imported whole: no edge, and not unresolved. Resolved nowhere: unresolved and the repository's own
 // when its first part is at the root or in `src/`, else not the repository's own; a relative one not found: unresolved
-// and the repository's own. A folder added to `sys.path` at run time is not seen.
+// and the repository's own. Any other folder added to `sys.path` at run time is not seen.
 
 import { execFileSync } from "node:child_process";
 import { statSync } from "node:fs";
 import { join, posix } from "node:path";
 import { fileURLToPath } from "node:url";
 import { findProgram } from "../../../_git.mjs";
+import { callStopped, limitFor } from "../../../_time-limit.mjs";
 import { printable } from "../../lib/printable.mjs";
 import { nestingStop } from "./source-bounds.mjs";
 
@@ -29,8 +32,10 @@ const READER = fileURLToPath(new URL("./python-reader.py", import.meta.url));
 const INTERPRETERS = ["python3", "python"];
 // milliseconds the version's ask may take: a Store stub that opens a window is passed over
 const ASK_TIMEOUT = 10000;
-// milliseconds the read may take: a few thousand files parse in seconds
+// milliseconds the read may take before its allowance: a few thousand files parse in seconds
 const READ_TIMEOUT = 300000;
+// milliseconds each .py file adds to the read's bound: three times the read measured over 3,000 files, 0.9 ms a file
+const READ_PER_FILE = 2.7;
 // the reader's output read at most: 50,000 files of a few imports each fit
 const OUTPUT_MAX = 64 * 1024 * 1024;
 // a version the reader reports, major.minor.micro of a Python 3
@@ -63,9 +68,14 @@ function findPython3() {
   return null;
 }
 
-// the stop for a read that failed, `e` what threw: in fixed words and numbers only, never the reader's own text
-function stopOnFailedRead(e, version) {
+// The Python read's bound for `count` .py files: READ_TIMEOUT and READ_PER_FILE a file.
+export const pythonReadLimit = (count) => limitFor({ floor: READ_TIMEOUT, perFile: READ_PER_FILE }, count);
+
+// the stop for a read that failed, `e` what threw, `bound` the read's: in fixed words and numbers only, never the
+// reader's own text
+function stopOnFailedRead(e, version, bound) {
   if (e && e.code === "ENOBUFS") return { stop: `the Python reader's output is over ${OUTPUT_MAX / 1024 / 1024} MB` };
+  if (e && e.code === "ETIMEDOUT") return { stop: callStopped("the Python reader", bound, e) };
   const exit = e && Number.isInteger(e.status) ? e.status : "none";
   return { stop: `the Python reader failed (exit ${exit}) under Python ${version}` };
 }
@@ -77,8 +87,9 @@ export function pythonParser(root, { files, declared }) {
   const python = findPython3();
   if (!python) return NO_PYTHON;
   let output;
-  try { output = runReader(python.program, [], { input: JSON.stringify({ root, files }), timeout: READ_TIMEOUT }); } catch (e) {
-    return stopOnFailedRead(e, python.version);
+  const bound = pythonReadLimit(files.length);
+  try { output = runReader(python.program, [], { input: JSON.stringify({ root, files }), timeout: bound }); } catch (e) {
+    return stopOnFailedRead(e, python.version, bound);
   }
   const parsedOutput = parseReaderOutput(output, files);
   if (!parsedOutput) return { stop: "the Python reader's output does not read" };
@@ -174,12 +185,18 @@ function isFirstPartAtRoot(root, module) {
   return ["", "src"].some((p) => isFile(join(root, p, `${first}.py`)) || isDir(join(root, p, first)));
 }
 
+// the folders above `folder`, nearest first, the root left out: `tests/road` gives `tests`
+function foldersAbove(folder) {
+  const parts = folder ? folder.split("/") : [];
+  return parts.slice(0, -1).map((_, k, above) => above.slice(0, above.length - k).join("/"));
+}
+
 // the folder an import's dotted path starts from: a relative one's by its dots; an absolute one's, the first search place
 // where its whole name resolves; null when none does
 function findStartFolder(root, file, { module, level }) {
   const own = posix.dirname(file) === "." ? "" : posix.dirname(file);
   if (level > 0) return posix.join(own, ...Array(level - 1).fill(".."));
-  const places = [own, "", ...(isDir(join(root, "src")) ? ["src"] : [])];
+  const places = [own, ...foldersAbove(own), "", ...(isDir(join(root, "src")) ? ["src"] : [])];
   return places.find((p) => isWholeAt(root, p, module)) ?? null;
 }
 

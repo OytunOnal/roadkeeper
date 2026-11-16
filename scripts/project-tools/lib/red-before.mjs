@@ -10,6 +10,7 @@
 // Exits 0 once the tests ran, whatever their cases said; 2 when the commands file refuses or no tree could be built; 3
 // when a named file is no plain file of the working tree.
 
+import { shortHash } from "../../_git.mjs";
 import { plural } from "../../_text.mjs";
 import { counted, listedByFile } from "./case-outcomes.mjs";
 import { inCommitTree, namedCommit, shownName, workingFile } from "./commit-tree.mjs";
@@ -30,7 +31,7 @@ export async function redBefore(call, say) {
   if (setup.said) say(`red-before: ${setup.said}`);
   const plan = { hash, copied: named, install: setup.commands.install, installFrom: setup.installFrom };
   return inCommitTree({ root: setup.root, label: "red-before", plan }, say, async (scratch) => {
-    say(`red-before: ${hash.slice(0, 12)}'s code, ${plural(named.length, "named file")}`);
+    say(`red-before: ${shortHash(hash)}'s code, ${plural(named.length, "named file")}`);
     const cases = await treeCases({ ...setup, tree: scratch.tree, files: named, results: scratch.results, label: "red-before" }, say);
     for (const line of listedByFile(cases)) say(line);
     say(`red-before: ${counted(cases)}`);
