@@ -5,7 +5,8 @@
 
 // each kind by its name, one string the tracker writes and the page reads
 export const FAILURE_KIND = Object.freeze({
-  noAnswer: "no-answer",        // a server's error answer, a failed connection, a timeout
+  noAnswer: "no-answer",        // a server's error answer, a failed connection, gh's own timeout
+  outOfTime: "out-of-time",     // the read stopped waiting: its time spent, or a gh call past the time it was given
   notSignedIn: "not-signed-in", // gh holds no login, or its login was refused
   ghMissing: "gh-missing",      // no gh to run
   rateLimited: "rate-limited",  // GitHub limiting reads, which passes on its own
@@ -17,6 +18,7 @@ export const FAILURE_KIND = Object.freeze({
 // What a failed read says, by its kind, a command in backticks; no text of `gh`'s.
 const FAILURE_WORDS = new Map([
   [FAILURE_KIND.noAnswer, "GitHub did not answer"],
+  [FAILURE_KIND.outOfTime, "the read ran out of time"],
   [FAILURE_KIND.notSignedIn, "gh is not signed in to GitHub: run `gh auth login`"],
   [FAILURE_KIND.ghMissing, "gh is not installed"],
   [FAILURE_KIND.rateLimited, "GitHub is limiting reads for now: it passes within the hour"],

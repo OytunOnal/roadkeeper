@@ -60,9 +60,15 @@ export { remoteHome } from "./lib/landing.mjs";
 
 // The check at write's judgement of the file just written at `file`, an absolute path, by its project's `lintFile`,
 // `writtenFileBreaches(file, project)`: only inside the session's project, the clone holding the folder `project`; a
-// promise of { lines }, the refusal's lines, none when it passes or is not judged; { unread: true } when the linter's
-// output could not be read; { said }, the line saying to install in a linked worktree (lib/written-file-lint.mjs).
+// promise of { lines }, the refusal's lines, none when it passes or is not judged; a refusal's with { path,
+// holdingRecords, pastCounts, movedRows } beside them, the file's path as shown and what the project's suppression
+// records say of it: the records holding rows for it, a rule past the count a record allows and records holding a moved
+// file's rows; with { cause, why } when
+// the adapter names a cause, none read or ESLint's own sentence beside them, and how the run ended; { said }, the line
+// saying where a linked worktree's install comes from (lib/written-file-lint.mjs).
 export { writtenFileBreaches } from "./lib/written-file-lint.mjs";
+// The causes the judgement names (adapters/adapters.mjs), each by its name: { failed, unread, overCounted, eslintStopped }.
+export { CAUSES } from "./adapters/adapters.mjs";
 
 // The plugin's lint rules copied into the project of the worktree holding `dir`, its RULES_COPY folder replaced whole,
 // each line handed to `say`: its exit code, 0 copied, 2 refused with nothing written.

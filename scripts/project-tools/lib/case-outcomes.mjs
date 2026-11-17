@@ -3,17 +3,20 @@
 // and compared between two trees.
 // A case is its file and its id; its outcomes are every outcome its id took in its file, in order, so a case run over
 // several inputs compares as a list; an unknown case always differs. An id gone from one file and new in another, once
-// among each tree's unmatched cases, is a moved case, compared across its files. Text from the run is shown with its
-// controls replaced, cut.
+// among each tree's unmatched cases, is a moved case, compared across its files. A changed case says why on each tree
+// it failed, went unknown or was skipped. Text from the run is shown with its controls replaced, cut.
 
-import { controlsReplaced, cutAt, plural } from "../../_text.mjs";
+import { controlsReplaced, cutAt, plural, readerLines } from "../../_text.mjs";
 
 const NAME_SHOWN = 300;   // characters of a file's or a case's name shown
+const REASON_SHOWN = 300; // characters of a changed case's reason shown: one line under its case's line
 const DETAIL_SHOWN = 600; // characters of a failing case's detail shown, as tests/_case.py shows it
 const DETAIL_INDENT = "      "; // under its case line, deeper than any case line
 const SEPARATOR = "\u0000"; // between a case's file and id in its key: no name read holds one
 const UNKNOWN = "UNKNOWN"; // a crashed file's case's outcome: nothing proves it
 const OUTCOMES_WITH_DETAIL = new Set(["FAIL", "SKIP"]); // the outcomes whose detail shows under their case
+// the outcomes a changed case says why it took: those with a detail, and a crash's unknown
+const OUTCOMES_WITH_REASON = new Set([...OUTCOMES_WITH_DETAIL, UNKNOWN]);
 
 const shown = (text) => cutAt(controlsReplaced(text), NAME_SHOWN);
 const order = new Intl.Collator("en", { numeric: true }).compare; // A2 before A10
@@ -68,16 +71,24 @@ export function listedByFile(cases) {
   return [...byFile].flatMap(([file, inFile]) => [fileLine(file, inFile), ...inFile.flatMap(caseLines)]);
 }
 
-// Each case's outcomes by its key: { file, id, outcomes }.
-function outcomesByCase(cases) {
+// Why a case took its outcome: a failing or unknown case's detail, a skipped case's reason; null for a pass.
+function reasonOf(testCase) {
+  if (!OUTCOMES_WITH_REASON.has(testCase.outcome)) return null;
+  return testCase.outcome === "SKIP" ? testCase.skipReason : testCase.detail;
+}
+
+// Each case's runs by its key, each run its outcome and why it took it: { file, id, runs: [{ outcome, reason }] }.
+function runsByCase(cases) {
   const found = new Map();
-  for (const { file, id, outcome } of cases) {
-    const key = file + SEPARATOR + id;
-    if (!found.has(key)) found.set(key, { file, id, outcomes: [] });
-    found.get(key).outcomes.push(outcome);
+  for (const c of cases) {
+    const key = c.file + SEPARATOR + c.id;
+    if (!found.has(key)) found.set(key, { file: c.file, id: c.id, runs: [] });
+    found.get(key).runs.push({ outcome: c.outcome, reason: reasonOf(c) });
   }
   return found;
 }
+
+const outcomesOf = (entry) => entry.runs.map((run) => run.outcome);
 
 // The ids among these unmatched cases that only one holds.
 function once(unmatched) {
@@ -97,26 +108,45 @@ const said = (outcomes) => outcomes.join(" ") || "none";
 
 // Whether a case's outcomes differ between the base and today: an unknown one on either tree always does, since
 // nothing proves it the same.
-const differs = (was, now) => said(was.outcomes) !== said(now.outcomes) || [...was.outcomes, ...now.outcomes].includes(UNKNOWN);
+const differs = (was, now) =>
+  said(outcomesOf(was)) !== said(outcomesOf(now)) || [...outcomesOf(was), ...outcomesOf(now)].includes(UNKNOWN);
 
 // The line naming a case whose outcomes differ between the base and today.
 function differenceLine(was, now) {
   const files = was.file === now.file ? was.file : `${was.file} -> ${now.file}`;
   const named = [files, was.id].filter(Boolean).map(shown).join(" ");
-  return `${named}: base ${said(was.outcomes)}, working tree ${said(now.outcomes)}`;
+  return `${named}: base ${said(outcomesOf(was))}, working tree ${said(outcomesOf(now))}`;
 }
 
-// The lines naming each case whose outcomes differ between the base's cases and today's: in its outcomes, in one tree
-// only, or in how often it ran, or unknown on either; file by file, id by id.
+// A tree's reason for a case, shown on one line: its first failed, unknown or skipped outcome's, blank lines dropped,
+// line breaks read as spaces, controls replaced, cut, the cut's end trimmed; "" for none.
+function treeReason(entry) {
+  const first = entry.runs.find((run) => run.reason !== null)?.reason ?? "";
+  return cutAt(controlsReplaced(readerLines(first).filter((l) => l.trim()).join(" ")), REASON_SHOWN).trimEnd();
+}
+
+// The lines under a changed case saying why, a tree's each led by its name; one led by `both trees` when they agree.
+function reasonLines(was, now) {
+  const baseReason = treeReason(was), todayReason = treeReason(now);
+  if (baseReason && baseReason === todayReason) return [`${DETAIL_INDENT}both trees: ${baseReason}`];
+  const byTree = [["base", baseReason], ["working tree", todayReason]].filter(([, reason]) => reason);
+  return byTree.map(([tree, reason]) => `${DETAIL_INDENT}${tree}: ${reason}`);
+}
+
+// In one tree only: the case as the other tree holds it, with no run.
+const markAbsent = (entry) => ({ ...entry, runs: [] });
+
+// Each case whose outcomes differ between the base's cases and today's, as its lines: in its outcomes, in one tree
+// only, or in how often it ran, or unknown on either; its line naming it, then why on each tree; file by file, id by id.
 export function differences(baseCases, todayCases) {
-  const base = outcomesByCase(baseCases), today = outcomesByCase(todayCases);
+  const base = runsByCase(baseCases), today = runsByCase(todayCases);
   const moved = moves(base, today);
   const landed = new Set([...moved.values()].map((c) => c.file + SEPARATOR + c.id));
   const keys = [...new Set([...base.keys(), ...today.keys()])].filter((k) => !landed.has(k));
   const cases = keys.map((k) => {
-    const was = base.get(k) ?? { ...today.get(k), outcomes: [] };
-    return [was, moved.get(k) ?? today.get(k) ?? { ...was, outcomes: [] }];
+    const was = base.get(k) ?? markAbsent(today.get(k));
+    return [was, moved.get(k) ?? today.get(k) ?? markAbsent(was)];
   });
   const sorted = cases.sort(([a], [b]) => order(a.file, b.file) || order(a.id, b.id));
-  return sorted.filter(([was, now]) => differs(was, now)).map(([was, now]) => differenceLine(was, now));
+  return sorted.filter(([was, now]) => differs(was, now)).map(([was, now]) => [differenceLine(was, now), ...reasonLines(was, now)]);
 }

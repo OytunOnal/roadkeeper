@@ -1,10 +1,10 @@
 // @level domain
 // Roadkeeper — the test cases of a JUnit XML text: each <testcase>, with the names of the <testsuite> elements around it,
 // its name, classname and file attributes, and its outcome: FAIL with a <failure> or <error> inside, else SKIP with a
-// <skipped>, else PASS; a FAIL's detail is its failure's message, else its text, and its text is kept beside. A hand
-// scanner over the text, bounded by its length: comments, CDATA outside a failure, processing instructions and
-// declarations are passed over; attribute values are decoded of the five named entities and the numeric ones. Reads no
-// tag it cannot parse.
+// <skipped>, else PASS; a FAIL's detail is its failure's message, else its text, and its text is kept beside; a SKIP's
+// reason is its skip's message. A hand scanner over the text, bounded by its length: comments, CDATA outside a failure,
+// processing instructions and declarations are passed over; attribute values are decoded of the five named entities
+// and the numeric ones. Reads no tag it cannot parse.
 
 const DETAIL_KEPT = 2000; // characters of a failure's text kept: its message and the first lines of its stack
 const NAME = /[A-Za-z_][\w.:-]*/y; // an element's or attribute's name, as JUnit writers spell them
@@ -60,19 +60,20 @@ function onSuite(state, { close, empty, attributes }) {
 function onCase(state, { close, empty, attributes }) {
   if (!close) {
     state.open = { suites: [...state.suites], name: attributes.name ?? "", classname: attributes.classname ?? "",
-      file: attributes.file ?? "", outcome: "PASS", detail: "", text: "" };
+      file: attributes.file ?? "", outcome: "PASS", detail: "", text: "", skipReason: "" };
   }
   const ends = close || empty;
   if (ends && state.open) { state.cases.push(state.open); state.open = null; }
 }
 
-// A tag inside the open case: a failure or an error fails it, its text read until it closes; a skip skips a passing one.
+// A tag inside the open case: a failure or an error fails it, its text read until it closes; a skip skips a passing one,
+// its message the skip's reason.
 function onOutcome(state, { name, close, empty, attributes }) {
   const isFailure = name === "failure" || name === "error";
   if (isFailure && !close) { state.open.outcome = "FAIL"; state.open.detail = attributes.message ?? ""; }
   if (isFailure) state.inFailure = !close && !empty;
   const skips = name === "skipped" && !close && state.open.outcome === "PASS";
-  if (skips) state.open.outcome = "SKIP";
+  if (skips) { state.open.outcome = "SKIP"; state.open.skipReason = attributes.message ?? ""; }
 }
 
 // The reading's state moved by one tag: the suites open, the case open, whether a failure's text is being read.
@@ -88,8 +89,8 @@ function onText(state, text) {
   if (kept) state.open.text = (state.open.text + text).slice(0, DETAIL_KEPT);
 }
 
-// The test cases of the JUnit text, in their order: { suites, name, classname, file, outcome, detail, text }, `text`
-// the failure's text, "" for none.
+// The test cases of the JUnit text, in their order: { suites, name, classname, file, outcome, detail, text, skipReason
+// }, `text` the failure's text, `skipReason` a SKIP's <skipped> message, each "" for none.
 export function junitCases(text) {
   const state = { suites: [], open: null, inFailure: false, cases: [] };
   let at = 0;
@@ -100,5 +101,5 @@ export function junitCases(text) {
     else if (markup.name) onTag(state, markup);
     at = markup.end;
   }
-  return state.cases.map((c) => ({ ...c, detail: (c.detail || c.text).trim(), text: c.text.trim() }));
+  return state.cases.map((c) => ({ ...c, detail: (c.detail || c.text).trim(), text: c.text.trim(), skipReason: c.skipReason.trim() }));
 }

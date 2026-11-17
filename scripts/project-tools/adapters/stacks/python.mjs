@@ -7,10 +7,11 @@
 // a class's names, and its own name, joined by "::" as pytest names a test; with no file, its whole classname and its
 // name. No install is shared: a linked `.venv` holds an editable install of the main checkout's code. The test files
 // are pytest's own. The check at write reads a linter's lines `path:line:col: CODE message`, which ruff, flake8, pylint
-// by its template and Roadkeeper's check (scripts/tools/check.py) print.
+// by its template and Roadkeeper's check (scripts/tools/check.py) print, and ESLint's own sentences, which that check
+// passes through.
 
 import { caseFromTestcase, readResultsCases } from "./junit-results.mjs";
-import { isUnusedName } from "./lint-message.mjs";
+import { buildLintRead, isUnusedName, readEslintCause } from "./lint-message.mjs";
 
 const toDottedPath = (file) => file.replace(/\.py$/, "").replaceAll("/", ".");
 
@@ -57,16 +58,18 @@ function readStatedNumbers(message) {
 
 // The breaches a lint run printed about `file` as `path:line:col: CODE message` (ruff's `--output-format=concise`,
 // flake8's, pylint's by template, Roadkeeper's check's), each { line, rule, numbers }, its unused names aside; lines about
-// other files, and its other lines, dropped. null when the run failed with no line about the file: its failure said
-// something else (the linter not installed, a crash).
+// other files, and its other lines, dropped: { breaches }; with { cause } beside them when ESLint's own sentence, which
+// Roadkeeper's check passes through, names one (lint-message.mjs), alone when there is no breach. { cause: "failed" }
+// when the run failed with no line about the file and no such sentence: its failure said something else (the linter
+// not installed, a crash).
 function readLintLineBreaches({ file, output, passed }) {
   const found = [];
   for (const text of output.replace(/\r\n?/g, "\n").split("\n")) {
     const said = LINT_LINE.exec(text);
     if (said && isSamePath(said[1], file)) found.push({ line: Number(said[2]), rule: said[3], numbers: readStatedNumbers(said[4]) });
   }
-  if (!passed && !found.length) return null;
-  return found.filter((b) => !isUnusedName(b.rule));
+  const breaches = found.filter((b) => !isUnusedName(b.rule));
+  return buildLintRead({ breaches, cause: readEslintCause(output), found: found.length, passed });
 }
 
 export const python = {

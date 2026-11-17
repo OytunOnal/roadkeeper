@@ -78,11 +78,15 @@ function samePins(root, main, folder) {
 const unpinnedLine = (folder) =>
   `${folder} is not linked from the main checkout: this worktree's ${LOCKFILE} differs from the main checkout's; install in this worktree`;
 
+// The line a tool says when a linked worktree's main checkout holds no install to lend.
+const sayMainHasNone = (folder) => `the main checkout has no ${folder}: install in the main checkout`;
+
 // The install folder `folder` (null: none) of the worktree at `root`: { from, said }. `from`, the checkout whose install
 // a run there uses: the root itself, unless it is a linked worktree with none of its own, which gets its main checkout's
-// linked in (linkFolder) while the two pin the same packages (samePins); null when there is none to use. `said`, when
-// they do not, the fixed line saying to install in the worktree; a link to the main checkout's install already there is
-// removed first.
+// linked in (linkFolder) while the two pin the same packages (samePins); null when there is none to use. `said`, the
+// fixed line saying where to install: in the main checkout when it holds no install and the worktree pins packages (a
+// lockfile beside the folder; a project with none has nothing to install), in the worktree when the pins differ, a
+// link to the main checkout's install already there removed first.
 export function worktreeInstall(root, folder) {
   if (!folder) return { from: null };
   const { main, linked } = checkouts(root);
@@ -91,7 +95,7 @@ export function worktreeInstall(root, folder) {
   const ours = isLink(path) && samePath(path, source);
   const itsOwn = lexists(path) && !ours;
   if (!linked || itsOwn) return { from: root };
-  if (!isPlainFolder(source)) return { from: null };
+  if (!isPlainFolder(source)) return lockBytes(root, folder) ? { from: null, said: sayMainHasNone(folder) } : { from: null };
   if (!samePins(root, main, folder)) {
     if (ours) { try { unlinkSync(path); } catch { /* left: the run finds it and fails */ } }
     return { from: null, said: unpinnedLine(folder) };
@@ -102,8 +106,8 @@ export function worktreeInstall(root, folder) {
 
 // Borrow the install of the worktree at `root`, its install folder `folder` (null: the stack has none), and say how:
 // { code, line }. 0 with an install there to use: linked in now, already linked, the worktree's own, the main checkout's
-// own, or none to borrow; 1 with none: the pins differ (worktreeInstall's line, a link laid before removed), the main
-// checkout has none, or the link could not be laid.
+// own, or none to borrow; 1 with none: worktreeInstall's line (the main checkout has none, or the pins differ, a link
+// laid before removed), the main checkout itself has none, or the link could not be laid.
 export function borrowInstall(root, folder) {
   if (!folder) return { code: 0, line: "the stack has no install to borrow" };
   const { linked } = checkouts(root);
@@ -111,13 +115,11 @@ export function borrowInstall(root, folder) {
   const before = lexists(path);
   const { from, said } = worktreeInstall(root, folder);
   if (said) return { code: 1, line: said };
-  if (!linked) return before ? { code: 0, line: `the main checkout uses its own ${folder}` } : sayMainHasNone(folder);
-  if (!from) return sayMainHasNone(folder);
+  const mainHasNone = linked ? !from : !before;
+  if (mainHasNone) return { code: 1, line: sayMainHasNone(folder) };
+  if (!linked) return { code: 0, line: `the main checkout uses its own ${folder}` };
   if (from === root) return { code: 0, line: `${folder} is this worktree's own` };
   if (before) return { code: 0, line: `${folder} already linked from the main checkout` };
   if (!lexists(path)) return { code: 1, line: `${folder} could not be linked from the main checkout; install in this worktree` };
   return { code: 0, line: `${folder} linked from the main checkout` };
 }
-
-// say that the main checkout holds no install to lend
-const sayMainHasNone = (folder) => ({ code: 1, line: `the main checkout has no ${folder}: install in the main checkout` });

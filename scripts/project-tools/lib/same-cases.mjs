@@ -4,7 +4,7 @@
 // it (commit-tree.mjs); today is the working tree in place. On each, the named test files it holds, or with none
 // named every file the commands file's `tests` pattern, else the adapter's, matches there, run by name after
 // `beforeTests` (test-run.mjs): the base first, then today. Prints "same outcomes" with the counts, or each case whose
-// outcomes differ with both, an unknown one on either tree always (case-outcomes.mjs).
+// outcomes differ with both, an unknown one on either tree always, and under it why on each tree (case-outcomes.mjs).
 //
 // Exits 0 when every case kept its outcome; 1 when one did not, or no file or case was found on either tree; 2 when the commands
 // file refuses or no tree could be built; 3 when a named file is a test file of neither tree.
@@ -32,10 +32,10 @@ function sideFiles(run, names) {
 // The lines comparing the base's cases with today's, each handed to `say`: the exit code.
 function compared(base, today, say) {
   if (!base.length && !today.length) { say("same-cases: no case read on either tree"); return 1; }
-  const lines = differences(base, today);
-  if (!lines.length) { say(`same outcomes: ${counted(today)}`); return 0; }
-  for (const line of lines) say(line);
-  say(`same-cases: ${plural(lines.length, "case")} ${lines.length === 1 ? "differs" : "differ"}`);
+  const changed = differences(base, today);
+  if (!changed.length) { say(`same outcomes: ${counted(today)}`); return 0; }
+  for (const line of changed.flat()) say(line);
+  say(`same-cases: ${plural(changed.length, "case")} ${changed.length === 1 ? "differs" : "differ"}`);
   return 1;
 }
 

@@ -2,7 +2,9 @@
 // Roadkeeper — the tracker: read through `gh`, cleaned into one snapshot shape, kept in docs/roadkeeper/issues.json; its
 // milestones renamed through `gh`. A read takes the issues, their parents, the milestones, and the timeline of each open
 // issue in flight wearing `waiting-on-you`, for the day the label was last added. A list of issues or milestones that
-// came back incomplete fails the read (checkWhole); a timeline that did leaves that issue's day unread.
+// came back incomplete fails the read (checkIssuesWhole, checkMilestonesWhole); a timeline that did leaves that issue's
+// day unread. The session line's read (readTrackerForCounts) takes only what the line counts, within the hook's time,
+// and writes nothing.
 //
 // One snapshot rule: offline, after `gh` fails, and for the previous read that dates `seenAt`, the tree's own snapshot
 // is read, else, in a linked worktree, its main checkout's (scripts/_git.mjs); a live read writes the tree's own,
@@ -51,7 +53,7 @@ const ghError = (e) => {
 const GH_AUTH_EXIT = 4; // gh's exit when it holds no login
 // what gh says when it is refused its login, or holds none
 const SIGNED_OUT = /gh auth login|\bHTTP 401\b/;
-// what gh says when no answer came: a server's error answer, or a connection failed or timed out
+// what gh says when no answer came: a server's error answer, or a connection failed or gh's own wait timed out
 const NO_ANSWER = /\bHTTP 5\d\d\b|error connecting to|dial tcp|no such host|connection (?:refused|reset)|i\/o timeout|TLS handshake timeout|Client\.Timeout|deadline exceeded/i;
 // what gh says when GitHub limits its reads: HTTP 429, and a 403's "API rate limit exceeded" or "secondary rate limit",
 // as gh's client ("HTTP 403: ...") and `gh api` ("gh: ... (HTTP 403)") print them; GraphQL's "API rate limit already
@@ -59,16 +61,18 @@ const NO_ANSWER = /\bHTTP 5\d\d\b|error connecting to|dial tcp|no such host|conn
 const RATE_LIMITED = /\bHTTP 429\b|\brate limit(?:ed)?\b/i;
 
 // The kind of a failed read (FAILURE_KIND): the kind an incomplete list was thrown with (incomplete); else, from what
-// `gh` threw, not signed in, gh missing (no program to run), rate limited, no answer (a server's error answer, a failed
-// connection, a timeout), or other.
+// `gh` threw, not signed in, gh missing (no program to run), out of time (the read stopped waiting: ETIMEDOUT, from its
+// own budget or a call's timeout), rate limited, no answer (a server's error answer, a failed connection, gh's own
+// timeout), or other.
 function classifyFailure(error) {
   const thrown = error || {};
   if (Object.values(FAILURE_KIND).includes(thrown.kind)) return thrown.kind;
   const said = `${thrown.stderr || ""}\n${thrown.message || ""}`;
   if (thrown.status === GH_AUTH_EXIT || SIGNED_OUT.test(said)) return FAILURE_KIND.notSignedIn;
   if (thrown.code === "ENOENT") return FAILURE_KIND.ghMissing;
+  if (thrown.code === "ETIMEDOUT") return FAILURE_KIND.outOfTime;
   if (RATE_LIMITED.test(said)) return FAILURE_KIND.rateLimited;
-  return thrown.code === "ETIMEDOUT" || NO_ANSWER.test(said) ? FAILURE_KIND.noAnswer : FAILURE_KIND.other;
+  return NO_ANSWER.test(said) ? FAILURE_KIND.noAnswer : FAILURE_KIND.other;
 }
 
 const PER_PAGE = 100; // the most a REST list gives in one page
@@ -94,38 +98,48 @@ function waitingSinceOf(issues, upTo, name) {
   return new Map(waits.map((i) => [i.number, labelledWaitingOn(upTo, name, i.number)]));
 }
 
-// An issue's parent number from the REST list's `parent_issue_url`, when the parent is an issue of this repository;
-// else null.
+// An issue's parent number from its address, the REST list's `parent_issue_url` (`…/repos/<owner>/<repo>/issues/N`) or
+// `gh issue list`'s parent `url` (`…/<owner>/<repo>/issues/N`), when the parent is an issue of this repository; else
+// null.
 function parentOf(url, name) {
-  const m = /\/repos\/([^/\s]+\/[^/\s]+)\/issues\/(\d{1,9})$/.exec(typeof url === "string" ? cutAt(url, 500) : "");
+  const m = /\/([^/\s]+\/[^/\s]+)\/issues\/(\d{1,9})$/.exec(typeof url === "string" ? cutAt(url, 500) : "");
   return m && m[1].toLowerCase() === name.toLowerCase() ? Number(m[2]) : null;
 }
 
 // An incomplete list's failure: the read fails as `gh` failing does, its kind (FAILURE_KIND) and its line said.
 const makeIncompleteError = (kind, said) => Object.assign(new Error(said), { kind });
 
-// Throws when a REST list came back incomplete: `restIssues`, the list of issues, ending short of its cap without an
-// issue `gh issue list` gave; `milestones`, the list of milestones, short of its cap without a milestone an issue names.
-// A list cut at its cap is whole as far as the snapshot reads (MAX_ISSUES, MAX_MILESTONES). Each list { items, capped }.
-function checkWhole(issues, restIssues, milestones) {
-  const numberOf = (x) => int(x && x.number);
-  const lacks = (list, n) => !list.capped && !list.items.some((x) => numberOf(x) === n);
+// A REST list's numbered thing, and whether `list` ({ items, capped }) lacks number `n`: a list cut at its cap is whole
+// as far as the snapshot reads (MAX_ISSUES, MAX_MILESTONES).
+const numberOf = (x) => int(x && x.number);
+const isLacking = (list, n) => !list.capped && !list.items.some((x) => numberOf(x) === n);
+
+// Throws when `restIssues`, the REST list of issues, came back incomplete: short of its cap without an issue
+// `gh issue list` gave.
+function checkIssuesWhole(issues, restIssues) {
   const listed = issues.map(numberOf).filter(Boolean);
-  const lacked = listed.filter((n) => lacks(restIssues, n));
+  const lacked = listed.filter((n) => isLacking(restIssues, n));
   if (lacked.length) {
     throw makeIncompleteError(FAILURE_KIND.incompleteIssues,
       `GitHub's list of issues lacks ${lacked.length} of the ${listed.length} issues gh listed, #${Math.min(...lacked)} first`);
   }
-  const named = issues.find((i) => i && numberOf(i.milestone) && lacks(milestones, numberOf(i.milestone)));
+}
+
+// Throws when `milestones`, the REST list of milestones, came back incomplete: short of its cap without a milestone an
+// issue names.
+function checkMilestonesWhole(issues, milestones) {
+  const named = issues.find((i) => i && numberOf(i.milestone) && isLacking(milestones, numberOf(i.milestone)));
   if (named) {
     throw makeIncompleteError(FAILURE_KIND.incompleteMilestones,
       `GitHub's list of milestones lacks milestone ${numberOf(named.milestone)}, which #${numberOf(named)} names`);
   }
 }
 
-// the tracker as `gh` returns it, before any cleaning, each issue with its parent and its `waitingSince`
-// (waitingSinceOf); each call is given what is left of the read's time
-function fetchTracker(root, until, run) {
+// A read started within `until`: { fetched, name, url, call, upTo }, its time, the repository `gh` names and its
+// address, `call(args)`, one `gh` call given what is left of the read's time, and `upTo(endpoint, cap)`, a REST list
+// read page by page until a short page or the cap, { items, capped }: a tracker larger than the snapshot is never
+// fetched whole.
+function startRead(root, until, run) {
   // the read's time is its start: a read started later saw every write before it
   const fetched = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
   const call = (args) => {
@@ -136,8 +150,6 @@ function fetchTracker(root, until, run) {
   const repo = JSON.parse(call(["repo", "view", "--json", "nameWithOwner,url"]));
   const name = String(repo.nameWithOwner || "");
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(name)) throw new Error(`gh named no repository: ${cutAt(name, 80)}`);
-  // A REST list read page by page until a short page or the cap: a tracker larger than the snapshot is never fetched
-  // whole. { items, capped }: what was read, and whether the read stopped at the cap.
   const upTo = (endpoint, cap) => {
     const items = [];
     for (let page = 1; items.length < cap; page++) {
@@ -149,16 +161,56 @@ function fetchTracker(root, until, run) {
     }
     return { items: items.slice(0, cap), capped: items.length >= cap };
   };
-  const issues = list(JSON.parse(call(["issue", "list", "--state", "all", "--limit", String(MAX_ISSUES),
-    "--json", "number,title,state,stateReason,labels,milestone,body,url,createdAt,closedAt,comments"])));
-  // `gh issue list` gives no parent; the REST list does, its pull requests counted against the cap too
-  const restIssues = upTo(`repos/${name}/issues?state=all`, MAX_ISSUES);
-  const milestones = upTo(`repos/${name}/milestones?state=all`, MAX_MILESTONES);
-  checkWhole(issues, restIssues, milestones);
-  const parents = new Map(restIssues.items.map((i) => [i && i.number, parentOf(i && i.parent_issue_url, name)]));
-  const since = waitingSinceOf(issues, upTo, name);
+  return { fetched, name, url: repo.url, call, upTo };
+}
+
+// the issues `gh issue list` gives in `state` (open, or all), each with `fields` only, by the read's `call` (startRead)
+const listIssues = ({ call }, state, fields) =>
+  list(JSON.parse(call(["issue", "list", "--state", state, "--limit", String(MAX_ISSUES), "--json", fields])));
+
+// every milestone, by the read's `upTo` (startRead): { items, capped }
+const readMilestones = ({ upTo, name }) => upTo(`repos/${name}/milestones?state=all`, MAX_MILESTONES);
+
+// each issue of the REST list's `items` by number to its parent (parentOf)
+const restParents = (items, name) => new Map(items.map((i) => [i && i.number, parentOf(i && i.parent_issue_url, name)]));
+
+// The tracker as a read returns it, before any cleaning: `issues`, each with its parent from `parents` (by number) and
+// its `waitingSince` (waitingSinceOf), and the milestones' items.
+function shapeTracker(read, { issues, parents, milestones }) {
+  const since = waitingSinceOf(issues, read.upTo, read.name);
   const shaped = issues.map((i) => ({ ...i, parent: parents.get(i && i.number) || null, waitingSince: since.get(i && i.number) || null }));
-  return { fetched, repo: name, url: repo.url, issues: shaped, milestones: milestones.items };
+  return { fetched: read.fetched, repo: read.name, url: read.url, issues: shaped, milestones };
+}
+
+// the tracker as `gh` returns it, before any cleaning, each issue with its parent and its `waitingSince`; each call is
+// given what is left of the read's time
+function fetchTracker(root, until, run) {
+  const read = startRead(root, until, run);
+  const issues = listIssues(read, "all", "number,title,state,stateReason,labels,milestone,body,url,createdAt,closedAt,comments");
+  // `gh issue list` gives no parent; the REST list does, its pull requests counted against the cap too
+  const restIssues = read.upTo(`repos/${read.name}/issues?state=all`, MAX_ISSUES);
+  const milestones = readMilestones(read);
+  checkIssuesWhole(issues, restIssues);
+  checkMilestonesWhole(issues, milestones);
+  return shapeTracker(read, { issues, parents: restParents(restIssues.items, read.name), milestones: milestones.items });
+}
+
+// The tracker as the session line counts it, before any cleaning: every issue with no body and no comment, the open
+// ones with their bodies and their parents from `gh issue list`'s own `parent`, each with its `waitingSince`; the
+// milestones. Each call is given what is left of the read's time. No comment is read, and no closed issue's parent:
+// the line reads a closed issue's "specced in" comment and its parent only to keep it out of the slices, and a closed
+// slice too many never stops a milestone being ready to close; but a milestone whose only issues are closed tickets
+// reads as ready.
+function fetchTrackerForCounts(root, until, run) {
+  const read = startRead(root, until, run);
+  const open = listIssues(read, "open", "number,body,parent");
+  const bodies = new Map(open.map((i) => [i && i.number, i && i.body]));
+  const parents = new Map(open.map((i) => [i && i.number, parentOf(i && i.parent && i.parent.url, read.name)]));
+  const issues = listIssues(read, "all", "number,title,state,stateReason,labels,milestone,url,createdAt,closedAt")
+    .map((i) => ({ ...i, body: bodies.get(i && i.number) || "" }));
+  const milestones = readMilestones(read);
+  checkMilestonesWhole(issues, milestones);
+  return shapeTracker(read, { issues, parents, milestones: milestones.items });
 }
 
 const str = (x, n) => (typeof x === "string" ? cutAt(x, n) : "");
@@ -250,17 +302,31 @@ function stampSeen(snap, previous) {
 // failure, and fromMainCheckout says the snapshot read is the main checkout's. `run(args, root, left)` makes one gh call
 // and returns what it printed.
 export function readTracker(root, offline, budget = 4 * GH_TIMEOUT, run = gh) {
-  let error = null, failure = null;
-  if (!offline) {
-    try {
-      const snap = stampSeen(cleanSnapshot(fetchTracker(root, Date.now() + budget, run)), readTreeSnapshot(root).snap);
-      const path = join(root, SNAPSHOT);
-      if (insideRoot(root, path) && !newerReadOnDisk(root, snap)) replaceFile(path, JSON.stringify(snap, null, 1) + "\n");
-      return { snap, live: true, error: null, failure: null, fromMainCheckout: false };
-    } catch (e) { error = ghError(e); failure = classifyFailure(e); }
-  }
-  return { ...readTreeSnapshot(root), live: false, error, failure };
+  if (offline) return { ...readTreeSnapshot(root), live: false, error: null, failure: null };
+  try {
+    const snap = cleanAndStamp(root, fetchTracker(root, Date.now() + budget, run));
+    const path = join(root, SNAPSHOT);
+    if (insideRoot(root, path) && !newerReadOnDisk(root, snap)) replaceFile(path, JSON.stringify(snap, null, 1) + "\n");
+    return liveResult(snap);
+  } catch (e) { return failedResult(root, e); }
 }
+
+// The tracker read live for the session line's counts within `budget` milliseconds (fetchTrackerForCounts): not
+// whole, it writes no snapshot. When `gh` fails, the tree's snapshot. Never throws: readTracker's shape.
+export function readTrackerForCounts(root, budget, run = gh) {
+  try {
+    return liveResult(cleanAndStamp(root, fetchTrackerForCounts(root, Date.now() + budget, run)));
+  } catch (e) { return failedResult(root, e); }
+}
+
+// a read's tracker `raw` cleaned, its first-seen days from the tree's snapshot (stampSeen)
+const cleanAndStamp = (root, raw) => stampSeen(cleanSnapshot(raw), readTreeSnapshot(root).snap);
+
+// a live read's result, readTracker's shape
+const liveResult = (snap) => ({ snap, live: true, error: null, failure: null, fromMainCheckout: false });
+
+// a failed read's result, readTracker's shape: the tree's snapshot, `gh`'s first line and the failure's kind
+const failedResult = (root, e) => ({ ...readTreeSnapshot(root), live: false, error: ghError(e), failure: classifyFailure(e) });
 
 // a milestone's title while another takes its own: unique by its number, and opening on no version
 const temporaryTitle = (number, title) => `renumbering #${number}: ${title}`;

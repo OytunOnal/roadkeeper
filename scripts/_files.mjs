@@ -1,7 +1,7 @@
 // @level infrastructure
 // Roadkeeper — reading and writing files safely: the plain-directory test, the docs/roadkeeper folder, the plain-file read, the
-// inside-the-root test and the whole-file write; a path's real path, whether anything lies at it, and its path from a
-// root it lies in.
+// inside-the-root test and the whole-file write; a path's real path, whether anything lies at it, its path from a root
+// it lies in, and whether a link lies on the way to it.
 //
 // Text from a repository or a tracker is a stranger's: read only from plain files with no link on the way, and
 // refused over a cap; a path is written to only inside the project.
@@ -23,9 +23,9 @@ export function pathFrom(root, file) {
   return inside ? rest.split("\\").join("/") : null;
 }
 
-// No segment from the root to the target is a symlink or a junction. A realpath check alone would pass a link that
-// resolves back inside the project.
-function noLinkOnTheWay(root, target) {
+// No segment from the root to the target is a symlink or a junction, each read by lstat, so no link is followed. A
+// realpath check alone would pass a link that resolves back inside the project.
+export function noLinkOnTheWay(root, target) {
   const rest = relative(root, target);
   if (!rest || rest.startsWith("..")) return false;
   let at = root;

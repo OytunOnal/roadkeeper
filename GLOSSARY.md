@@ -284,8 +284,12 @@ Of a code file past the size limits: its lines and characters as recorded when t
 _Avoid_: debt (the structure's word), allowance
 
 **Suppression**:
-Of a function rule: the count of its breaches recorded for one file. The count may not grow, and the row leaves when it reaches none.
+Of a function rule: the count of its breaches recorded for one file. The count may not grow; once the file has fewer breaches, the count is lowered (pruned), and the row leaves when it reaches none.
 _Avoid_: debt (the structure's word), waiver
+
+**Suppression record**:
+A file holding a project's Suppressions, by file and rule, in ESLint's bulk-suppressions shape (`{ path: { rule: { count } } }`): ESLint's own, or one ESLint does not read that a project's commands file lists.
+_Avoid_: debt record, suppressions file
 
 ### Coding standards
 

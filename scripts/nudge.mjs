@@ -2,9 +2,10 @@
 // @level main
 // Roadkeeper — the nudge (SessionStart hook).
 //
-// In a project with docs/roadkeeper/, reads the tracker into the snapshot docs/roadkeeper/issues.json, redraws The Road from it
-// on the default branch, then says in one line what The Road's model (scripts/road/) counts from the snapshot and
-// docs/roadkeeper/metrics.md: the current milestone when it is ready to close, the open issues no one has triaged, today's
+// In a project with docs/roadkeeper/, reads from the tracker what its line counts, within the hook's time and writing no
+// snapshot (scripts/_tracker.mjs, readTrackerForCounts), or, when that read fails, the snapshot docs/roadkeeper/issues.json;
+// redraws The Road from the snapshot on the default branch; then says in one line what The Road's model (scripts/road/)
+// counts from that read and docs/roadkeeper/metrics.md: the current milestone when it is ready to close, the open issues no one has triaged, today's
 // waiting-on-you issues with how many are late and the oldest known age, those set aside (waiting on something else
 // first) apart, and the metric readings that are due: The Road's session line (scripts/road/road.mjs, sessionLine),
 // the human's sentence as systemMessage, Claude's as additionalContext. Silent when there is nothing to say. Always
@@ -13,7 +14,7 @@
 import { fileURLToPath } from "node:url";
 import { todayLocal } from "./_clock.mjs";
 import { recordsDir } from "./_files.mjs";
-import { readTracker } from "./_tracker.mjs";
+import { readTrackerForCounts } from "./_tracker.mjs";
 import { roadModel, sessionLine } from "./road/road.mjs";
 import { drawRoadAtHome, readInput, repoRoot } from "./_hook.mjs";
 
@@ -27,7 +28,7 @@ function main() {
   const root = repoRoot(input.cwd || process.cwd());
   if (!root || !recordsDir(root)) return;
 
-  const { snap, live, failure } = readTracker(root, false, TRACKER_BUDGET);
+  const { snap, live, failure } = readTrackerForCounts(root, TRACKER_BUDGET);
   // the outcome goes unsaid: the page is The Road's to report, and the counts stand either way
   drawRoadAtHome(root, ROAD, { offline: true, timeout: DRAW_TIMEOUT });
 

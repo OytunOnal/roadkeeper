@@ -40,7 +40,9 @@ export function remoteHome(root, remote, home) {
   return valid && ask(root, ["rev-parse", "--verify", "-q", ref]) ? ref : "";
 }
 
-// whether the remote-tracking ref already holds the commit: it has landed before
+// Whether the remote-tracking ref already holds the commit: it has landed before. The walk grows with the history, under
+// git's fixed GIT_TIMEOUT: measured at 3.5 microseconds a small commit without a commit-graph, twice that allowed for real
+// ones, it reaches the limit only past about 1.4 million commits; a call that times out reads as not held, so only an unstamped commit the remote holds is then refused.
 const remoteHolds = (root, ref, commit) => { try { git(["merge-base", "--is-ancestor", commit, ref], root); return true; } catch { return false; } };
 
 // The refusal for a commit that is not green, by its state (landingState).

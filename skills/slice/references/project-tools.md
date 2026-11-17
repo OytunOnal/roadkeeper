@@ -22,6 +22,7 @@ Take the steps in order.
    - `runTests`: one run of named test files writing a per-case report: `{files}` becomes the files, `{out}` the report's path.
    - `beforeTests` (optional): what the tests need built first on an older tree.
    - `lintFile` (optional): the linter on one file, `{file}` its path: the check at write.
+   - `suppressionRecords` (optional): suppression records in ESLint's shape (`{ path: { rule: { count } } }`) that ESLint does not find itself, their paths from the root. Beside a refusal, the check at write names a rule past a record's count and rows left under a moved file's old path; it finds ESLint's own record as ESLint does.
    - `readByNothing` (optional): files no step reads, as the CI's ignored paths; `docs/roadkeeper/**` when left out. A tree differing from a green one only in these runs the doc tests alone.
    - `docTests` (optional, with `runTests`): the doc tests, the test files that read a `readByNothing` file; a test reading files it does not name (a sweep) goes here too. Once it names a test, a document-only commit lands only on its own green stamp; empty or absent, it lands on a nearby one. Once declared, `[]` included, a test naming a listed path in neither this list nor `notDocTests` turns the green red; until then the green prints a line for it.
    - `notDocTests` (optional): test files that name a listed path but read none, such as one writing a fixture copy.
@@ -66,7 +67,7 @@ Take the steps in order.
   - ruff for `lintFile`: `["uv", "run", "ruff", "check", "--output-format=concise", "{file}"]`; flake8's default line reads the same, and pylint's as `["uv", "run", "pylint", "--msg-template={path}:{line}:{column}: {msg_id} {msg}", "{file}"]`.
   - Roadkeeper's lint rules reach a Python project at review; its own linter, at write.
 
-A linked worktree with no install of its own gets the main checkout's linked in while its `package-lock.json` beside the install matches the main checkout's byte for byte; otherwise each tool says to install in the worktree. `node ${CLAUDE_PLUGIN_ROOT}/scripts/borrow-install.mjs` lays that link alone, before a suite run through the project's own runner.
+A linked worktree with no install of its own gets the main checkout's linked in while its `package-lock.json` beside the install matches the main checkout's byte for byte; otherwise each tool says to install in the worktree, or in the main checkout when it has none. The borrow reads npm's `package-lock.json` alone: a project pinning with another package manager installs in each worktree. `node ${CLAUDE_PLUGIN_ROOT}/scripts/borrow-install.mjs` lays that link alone, before a suite run through the project's own runner.
 
 ## Another stack
 

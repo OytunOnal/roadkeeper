@@ -5,11 +5,12 @@
 // a file the run was given (Vitest); else none. Its id is the names of the testsuites around it, but the one naming its
 // file, and its own, joined by " > ". A file Node's runner could not load, its case saying only "test failed", takes its
 // cause from the run's output (load-cause.mjs). The install is node_modules. The check at write reads ESLint's JSON report
-// (`--format json`) from its lint run's output.
+// (`--format json`) from its lint run's output, ESLint's own sentences beside it, and the run's exit: a failed run whose
+// report holds no error is a cause.
 
 import { eslintNumbers } from "../../../_eslint-numbers.mjs";
 import { caseFromTestcase, readResultsCases } from "./junit-results.mjs";
-import { isUnusedName } from "./lint-message.mjs";
+import { CAUSES, buildLintRead, isUnusedName, readEslintCause } from "./lint-message.mjs";
 import { withLoadCause } from "./load-cause.mjs";
 
 // A JUnit testcase as a case of the run that was given `files`.
@@ -38,14 +39,18 @@ function eslintReport(output) {
   return null;
 }
 
-// A lint run's breaches, read from ESLint's JSON (`--format json`): its errors, warnings and unused names aside, each
-// { line, rule, numbers }, a parse error's rule `parse`; null when the output holds no report.
-function lintBreaches({ output }) {
+// A lint run read from ESLint's JSON (`--format json`): { breaches }, its errors, warnings and unused names aside, each
+// { line, rule, numbers }, a parse error's rule `parse`; with { cause } beside them when ESLint's own sentence names one
+// (lint-message.mjs), alone when there is no breach. Else { cause }: `failed` when the run did not pass and its report
+// holds no error (a warning ESLint was told to fail on) or there is no report, `unread` when it passed with none.
+function lintBreaches({ output, passed }) {
+  const cause = readEslintCause(output);
   const report = eslintReport(output);
-  if (!report) return null;
-  return report.flatMap((r) => (Array.isArray(r?.messages) ? r.messages : []))
-    .filter((m) => m?.severity === 2 && !isUnusedName(m.ruleId))
+  if (!report) return { cause: cause ?? (passed ? CAUSES.unread : CAUSES.failed) };
+  const errors = report.flatMap((r) => (Array.isArray(r?.messages) ? r.messages : [])).filter((m) => m?.severity === 2);
+  const breaches = errors.filter((m) => !isUnusedName(m.ruleId))
     .map((m) => ({ line: m.line, rule: m.ruleId ?? "parse", numbers: eslintNumbers(m.message) }));
+  return buildLintRead({ breaches, cause, found: errors.length, passed });
 }
 
 export const jsTs = {

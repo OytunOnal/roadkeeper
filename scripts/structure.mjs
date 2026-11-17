@@ -7,7 +7,7 @@
 // compiler come from the node_modules at the project root or in the --packages folder, its Python from the PATH
 // (docs/adr/0003). In a linked worktree with none in that folder, the main checkout's is linked in first while the two
 // checkouts' package-lock.json beside it match byte for byte, as borrow-install.mjs links it (scripts/project-tools/);
-// otherwise it stops, saying to install in the worktree.
+// otherwise it stops, saying where to install: in the main checkout when it has none, else in the worktree.
 //
 // Writes: docs/roadkeeper/structure.json, and that install's link; runs no program but the PATH's Python 3 on a project
 // holding `.py` files, and asks git for the worktree and its main checkout only when the project holds a JavaScript,
@@ -32,7 +32,7 @@ function packagesFrom(argv) {
 }
 
 // The main checkout's node_modules borrowed into the packages folder `dir` of a linked worktree with none: null, or
-// { stop } saying to install in the worktree. A folder outside the worktree, or no worktree, borrows nothing.
+// { stop } saying where to install. A folder outside the worktree, or no worktree, borrows nothing.
 function borrowInto(dir) {
   const top = worktreeRoot(root);
   if (!top) return null;
