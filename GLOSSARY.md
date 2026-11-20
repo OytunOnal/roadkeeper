@@ -76,6 +76,14 @@ _Avoid_: onboarding doc
 An issue on a milestone, named by what becomes possible once it lands; it goes from grill to real use through the `slice` skill. Once specced, the spec carries it: the issue and its spec are one slice.
 _Avoid_: sprint, ticket (Pocock's word for the parts a spec is cut into)
 
+**Slice window**:
+The time from a slice's `active` label to the next issue's `active` label, or to now; every transcript of the project in that time belongs to the slice.
+_Avoid_: range, span
+
+**Hook refusal**:
+A hook stopping a call before it runs; the call never happens. Check-at-write's message after a write is a lint fix, not a refusal.
+_Avoid_: block, lint message
+
 **Fold**:
 An issue taken into a slice that shares its files or its concern, closed as `duplicate`; the slice carries its text.
 _Avoid_: merge, epic
@@ -240,17 +248,33 @@ _Avoid_: stamp alone (the structure stamp's word)
 The tree a green runs on: the last commit's with nothing uncommitted, else the one committing all of it would make. Its green stamp is named by it.
 _Avoid_: working tree (git's word for the files on disk)
 
+**Suite record**:
+The record a suite's run keeps for its tree when every case passed or skipped: each case's name and outcome. A refactor's proof reads it for the old code in place of running the suite, on that tree or on one where nothing the suite reaches has changed.
+_Avoid_: outcome cache, case record
+
 **Doc test**:
 A test file that reads one of the project's documents, a file the green otherwise skips; it runs when only such files changed.
 _Avoid_: docs check, document test
 
 **Reader test**:
-A test file that reaches a changed file, directly or through the files and test helpers that import or name it: the tests a change touches, run before its commit; the full green still decides.
+A test file that reads a changed file: its run loads it as code or opens it, in its own process or a child it starts. Found by reaching the file, directly or through the files, test helpers and run lists that import or name it: the tests a change touches, run before its commit; the full green still decides.
 _Avoid_: guard suite, related test
+
+**Run list**:
+A file the commands file declares as listing commands a test runs, such as a hooks file or a git hook: a test naming it reads each script it names by its path, and what those import.
+_Avoid_: command file (the commands file is Roadkeeper's), manifest, script list
 
 **Test helper**:
 A file only test files and other test helpers import: a fixture, a shared case printer; the code under test, which other code imports too, is none.
 _Avoid_: test util, support file
+
+**Naming text**:
+A file's text with what names nothing dropped, the text a reader test is found by: a Python or JS/TS file's comments, and a Python docstring. A plain string stays: a path in it names the file.
+_Avoid_: stripped text, clean text
+
+**Top-level definition**:
+A test helper's top-level statement that defines one name or a few (a function, a class, a constant), read so that naming a file in it reaches only the test files using that name. A top-level statement defining nothing runs on import, so naming a file there reaches every importer.
+_Avoid_: top-level symbol, export (a Python helper exports nothing)
 
 **Sibling**:
 A folder outside a project's root that its manifest names as a dependency by its path; a run on an older commit finds it beside the main checkout.
@@ -284,7 +308,7 @@ Of a code file past the size limits: its lines and characters as recorded when t
 _Avoid_: debt (the structure's word), allowance
 
 **Suppression**:
-Of a function rule: the count of its breaches recorded for one file. The count may not grow; once the file has fewer breaches, the count is lowered (pruned), and the row leaves when it reaches none.
+Of a lint rule: the count of its breaches recorded for one file. The count may not grow; once the file has fewer breaches, the count is lowered (pruned), and the row leaves when it reaches none.
 _Avoid_: debt (the structure's word), waiver
 
 **Suppression record**:

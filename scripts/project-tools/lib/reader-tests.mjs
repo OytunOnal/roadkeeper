@@ -1,9 +1,9 @@
 // @level infrastructure
 // Roadkeeper — reader-tests: a change's reader tests (reader-scan.mjs), listed sorted by path: where the project's
-// structure.json records its edges, the test files reaching a changed file through them, each followed by the file it
-// comes through; else those whose own text names a changed file's path or one of its exported names. With `--run`, run
-// in place as the green's `{tests}` step runs them (test-run.mjs), ending on a line saying they are not the green. It
-// writes no green stamp.
+// structure.json records its edges, the test files reaching a changed file through them and the run lists the commands
+// file's `runLists` names, each followed by the file it comes through; else those whose own text names a changed file's
+// path or one of its exported names. With `--run`, run in place as the green's `{tests}` step runs them (test-run.mjs),
+// ending on a line saying they are not the green. It writes no green stamp.
 // The change: the files named, by their paths from the root, else the uncommitted ones, staged, unstaged and
 // untracked, as git lists them.
 // The test files: those the commands file's `tests`, else the adapter's, matches, none reached through a link.
@@ -12,7 +12,7 @@ import { isAbsolute } from "node:path";
 import { plural } from "../../_text.mjs";
 import { pathFromRoot, shownName, uncommittedFiles } from "./commit-tree.mjs";
 import { changeReaders } from "./reader-scan.mjs";
-import { testSetup, testsStepRun, worktreeTests } from "./test-run.mjs";
+import { testSetup, testsStepRun, worktreeRunLists, worktreeTests } from "./test-run.mjs";
 
 export const RUN = "--run"; // the option running the reader tests found
 const LABEL = "reader-tests"; // the tool's lines start with it
@@ -40,7 +40,8 @@ export async function readerTests({ dir, args, matches, recordedEdges }, say) {
     return 2;
   }
   if (setup.said) say(`${LABEL}: ${setup.said}`);
-  const scan = changeReaders({ root: setup.root, tests: worktreeTests(setup), changed, recordedEdges });
+  const runLists = worktreeRunLists(setup);
+  const scan = changeReaders({ root: setup.root, tests: worktreeTests(setup), changed, recordedEdges, runLists });
   for (const line of scan.said) say(`${LABEL}: ${line}`);
   const sorted = [...scan.readers].sort((a, b) => (a.file < b.file ? -1 : 1));
   for (const r of sorted) say(shownName(r.file) + (r.through ? `  (through ${shownName(r.through)})` : ""));

@@ -9,7 +9,8 @@ import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import { readPlainFile } from "../../_files.mjs";
 import { shownName, workingFile } from "./commit-tree.mjs";
-import { exportedNames, namingPattern, readersThroughEdges, testHelpers } from "./reader-rule.mjs";
+import { namingText } from "./naming-text.mjs";
+import { exportedNames, namesSibling, namingPattern, readersThroughEdges, testHelpers } from "./reader-rule.mjs";
 
 const CAP = 512 * 1024; // bytes of one file read: many times the largest suite
 
@@ -36,8 +37,9 @@ const textReader = (root, said) => (path) => {
 // The reader tests of the `changed` files among the `tests`, both by their paths from the root `root`: { read,
 // readers, said }, `read` the count of test files read, `readers` each test file naming a changed file as { file,
 // reads }, `reads` the changed paths it names, in the tests' order, `said` a line for each file over CAP. `byNames`:
-// whether a changed file's exported names count, else its path alone.
-export function readerScan({ root, tests, changed, byNames }) {
+// whether a changed file's exported names count, else its path alone. `readsComments`: whether a test's comments and
+// docstrings count, else they are dropped first (naming-text.mjs, namingText).
+export function readerScan({ root, tests, changed, byNames, readsComments }) {
   const said = [];
   const textOf = textReader(root, said);
   const patterns = changed.map((path) => {
@@ -50,7 +52,9 @@ export function readerScan({ root, tests, changed, byNames }) {
     const text = textOf(file);
     if (text === undefined) continue;
     read += 1;
-    const reads = patterns.filter((p) => p.pattern.test(text)).map((p) => p.path);
+    const naming = readsComments ? text : namingText(file, text);
+    const names = (p) => p.pattern.test(naming) || namesSibling(file, p.path, naming);
+    const reads = patterns.filter(names).map((p) => p.path);
     if (reads.length) readers.push({ file, reads });
   }
   return { read, readers, said };
@@ -58,27 +62,28 @@ export function readerScan({ root, tests, changed, byNames }) {
 
 // The reader tests of the `changed` files among the `tests` where the project records its `edges` ({ from, to }), by
 // imports and paths (reader-rule.mjs, readersThroughEdges): { read, readers, said }, `read` and `said` as readerScan's,
-// `readers` each { file, through }. The test files and their helpers are read.
-export function readersThrough({ root, tests, changed, edges }) {
+// `readers` each { file, through }. The test files, their helpers and the project's `runLists` (paths from the root)
+// are read.
+export function readersThrough({ root, tests, changed, edges, runLists = [] }) {
   const said = [];
   const textOf = textReader(root, said);
   const texts = new Map();
   const helpers = testHelpers(tests, edges);
-  for (const file of [...tests, ...helpers]) {
+  for (const file of [...tests, ...helpers, ...runLists]) {
     const text = textOf(file);
     if (text !== undefined) texts.set(file, text);
   }
   const suites = tests.filter((t) => texts.has(t));
-  return { read: suites.length, readers: readersThroughEdges({ changed, suites, edges, helpers, texts }), said };
+  return { read: suites.length, readers: readersThroughEdges({ changed, suites, edges, helpers, runLists, texts }), said };
 }
 
 // A change's reader tests among the `tests`, both by their paths from the root `root`: through the edges
-// `recordedEdges(root)` reads from the project's structure.json where it records them (readersThrough), else by path and
-// exported names (readerScan): { read, readers, said }, as theirs, `said` led by the line saying what structure.json
-// left unread. `recordedEdges(root)`: { recorded, edges, unread }.
-export function changeReaders({ root, tests, changed, recordedEdges }) {
+// `recordedEdges(root)` reads from the project's structure.json where it records them, and its `runLists`
+// (readersThrough), else by path and exported names (readerScan): { read, readers, said }, as theirs, `said` led by the
+// line saying what structure.json left unread. `recordedEdges(root)`: { recorded, edges, unread }.
+export function changeReaders({ root, tests, changed, recordedEdges, runLists = [] }) {
   const { recorded, edges, unread } = recordedEdges(root);
-  const scan = recorded ? readersThrough({ root, tests, changed, edges }) : readerScan({ root, tests, changed, byNames: true });
+  const scan = recorded ? readersThrough({ root, tests, changed, edges, runLists }) : readerScan({ root, tests, changed, byNames: true, readsComments: false });
   const lead = unread ? [`${unread}${recorded ? "" : "; listed by path and exported names"}`] : [];
   return { ...scan, said: [...lead, ...scan.said] };
 }

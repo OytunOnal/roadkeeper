@@ -39,6 +39,7 @@ const FIELDS = [
   ["readByNothing", isStringList, "a list of file patterns", false],
   ["docTests", isStringList, "a list of test files", false],
   ["notDocTests", isStringList, "a list of test files", false], // tests naming a readByNothing path, reading none
+  ["runLists", isStringList, "a list of file patterns", false], // files listing commands a test runs (reader-tests)
   ["install", isFolderPath, "a folder's path from the root, its parts joined by /", false],
   ["filesPerRun", isRunSize, "a whole number above 0", false],
   ["suppressionRecords", isRecordList, `a list of at most ${MAX_RECORDS} file paths`, false], // read by the check at write

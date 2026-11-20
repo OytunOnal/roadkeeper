@@ -2,8 +2,9 @@
 // Roadkeeper — the structure digest's use case: which files it reads, how they group into modules, the facts the structure
 // report reads, and the stamp written from them. The walk, the reads and the hashing are disk-facts.mjs's.
 //
-// A file belongs to the deepest module above it; outside every module only a source file (SOURCE) that no `## Tests`
-// pattern names is read. What `## Ignore` names is taken out and counted.
+// A file belongs to the deepest module above it. Every source file (SOURCE) outside the modules is read, tests
+// included, since the structure command records their edges; only those no `## Tests` pattern names are listed as
+// `loose`. What `## Ignore` names is taken out and counted.
 
 import { SOURCE, globMatch, pathAndParents } from "./source-paths.mjs";
 import { structurePath } from "./structure-model.mjs";
@@ -12,22 +13,22 @@ import { diskLines } from "./report-lines.mjs";
 
 // What a digest of these modules reads: { walked, the folders to walk, outer modules first so a nested one already read
 // is passed over; reads(rel), whether a file met is read: a module's, or under the `loose` option a source file no
-// module holds and no test pattern names; ignored(rel), whether ## Ignore takes it out; grouped(sorted), the files read
-// by module, in declaration order, and the rest as `loose` }.
+// module holds; ignored(rel), whether ## Ignore takes it out; grouped(sorted), the files read by module, in declaration
+// order, and the rest no test pattern names as `loose` }.
 export function stalenessDigest(modulePaths, { ignore = [], tests = [], loose = false } = {}) {
   const mods = [...new Set(modulePaths)], modSet = new Set(mods);
   const deepest = (f) => { for (const p of pathAndParents(f)) if (modSet.has(p)) return p; return null; };
   const isTest = testOf(tests);
   return {
     walked: [...mods].sort(),
-    reads: (rel) => deepest(rel) !== null || (loose && SOURCE.test(rel) && !isTest(rel)),
+    reads: (rel) => deepest(rel) !== null || (loose && SOURCE.test(rel)),
     // the patterns as structureModel read them: it keeps at most MAX_IGNORE
     ignored: (rel) => ignore.some((p) => globMatch(p, rel)),
     grouped: (sorted) => {
       const files = new Map(mods.map((m) => [m, []])), outside = [];
       for (const p of sorted) {
         const m = deepest(p);
-        if (m) files.get(m).push(p); else outside.push(p);
+        if (m) files.get(m).push(p); else if (!isTest(p)) outside.push(p);
       }
       return { files, loose: outside };
     },

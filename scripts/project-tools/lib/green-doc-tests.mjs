@@ -57,7 +57,7 @@ export function docTestListsPass({ root, commands, named, matches }, say) {
   const listed = workingFiles(root).filter((path) => readByNothing(path, commands.readByNothing, matches));
   if (!listed.length) return true;
   const tests = worktreeTests({ root, isTest: testFileMatcher(commands, matches) });
-  const scan = readerScan({ root, tests, changed: listed, byNames: false });
+  const scan = readerScan({ root, tests, changed: listed, byNames: false, readsComments: true });
   for (const line of scan.said) say(`green: ${line}`);
   say(`green: ${plural(scan.read, "test file")} read for the ${plural(listed.length, "file")} readByNothing lists`);
   const unlisted = scan.readers.filter((reader) => !named.has(reader.file));

@@ -22,7 +22,7 @@ A JavaScript, TypeScript, Astro or Python project runs Roadkeeper's, in its root
 - **edges**: one per dependency. Kinds: `dependency`, `type-only`, `implements`, `inheritance`.
 - **levels** (optional): every file that carries `@level`, a file of mixed levels with its levels split by spaces.
 - **declarations** (optional): what each file declares: `fn`, `class`, `const`, `type` or `other`.
-- **files** (a module's), **loose** (the files no module holds) and **digest**: written by the stamp. The digest lets the check tell when the code has changed since.
+- **files** (a module's), **loose** (the files no module holds) and **digest**: written by the stamp. The digest covers every file whose edges the command records, tests included, so the check tells when any of them has changed since.
 
 Paths are relative to the repo root, with forward slashes.
 

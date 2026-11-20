@@ -6,13 +6,25 @@
 // Python top-level `def` and `class`; any other file is named by its path alone.
 // And, where a project records its edges (structure.json), what reaches a changed file: the files importing it, and
 // their importers up to the top, and a test helper (a file only suites and other helpers import) naming a reached file
-// by its path; a suite reads it when it is changed itself, imports a reached file, or names one
-// by its path. Names do not count there. Pure: the texts and edges are the caller's.
+// by its path, outside an import statement. A helper's naming is tied to its top-level definitions
+// (top-level-definitions.mjs): it reaches through the functions, classes and constants whose definitions name the file,
+// and those using them, followed within the helper; a suite or helper importing it reaches through it only when it uses
+// one of those names. A top-level statement outside any definition naming the file reaches it for every importer,
+// since importing runs it. A run list the project declares (a file listing commands a test runs) is a step too: it
+// reaches each file its text names by its path, whole, and a suite or helper naming it reaches through it. A suite
+// reads it when it is changed itself, imports a reached file (using its reaching names where it has them), or names one
+// by its path. Names do not count there. Pure: the texts, edges and run lists are the caller's.
+// The boundary, on both: a path in a plain string counts; a bare file name counts only for a file of that name in the
+// naming file's own folder, any other bare name not; nor does a comment or docstring, dropped before any matching: a
+// Python or JS/TS file's comments, and a Python string statement that is a module's, a function's or a class's first
+// statement. A script another script starts, by its path or a sibling name rather than an import, is not seen. Each
+// text is read once, linearly.
 
 import { escapeForPattern } from "../../_text.mjs";
+import { JS_TS, PYTHON, namingText } from "./naming-text.mjs";
+import { WHOLE, codeReferences, helperBindings, namesReached, textOutsideImports, topLevelDefinitions, usesHelper }
+  from "./top-level-definitions.mjs";
 
-const JS_TS = /\.(?:[cm]?[jt]s|[jt]sx)$/; // a JS/TS file, by its name
-const PYTHON = /\.py$/;                   // a Python file, by its name
 // a JS/TS name declared exported: after `export function`, `export async function`, `export const|let|class`
 // (a generator's `*` and its spaces one optional group, so no run of spaces splits two ways: linear)
 const JS_DECLARED = /\bexport\s+(?:(?:async\s+)?function\s*(?:\*\s*)?|(?:const|let|class)\s+)([A-Za-z_$][\w$]*)/g;
@@ -42,9 +54,21 @@ export function exportedNames(path, text) {
 // The pattern of a text naming the file at `path`: its parts in order with SEPARATORS between, no word
 // running on at either end; or, given its exported `names`, one of them as a whole word.
 export function namingPattern(path, names) {
-  const byPath = `(?<![\\w.-])${path.split("/").map(escapeForPattern).join(SEPARATORS)}(?![\\w-]|\\.\\w)`;
-  const byName = names.length ? `|(?<![\\w$])(?:${[...new Set(names)].map(escapeForPattern).join("|")})(?![\\w$])` : "";
-  return new RegExp(byPath + byName);
+  const pathSource = `(?<![\\w.-])${path.split("/").map(escapeForPattern).join(SEPARATORS)}(?![\\w-]|\\.\\w)`;
+  const nameSource = names.length ? `|(?<![\\w$])(?:${[...new Set(names)].map(escapeForPattern).join("|")})(?![\\w$])` : "";
+  return new RegExp(pathSource + nameSource);
+}
+
+// The folder of the file at `path`, its closing slash kept; "" at the root.
+function folderOf(path) {
+  return path.slice(0, path.lastIndexOf("/") + 1);
+}
+
+// Whether the text of the file at `namer` names the file at `path` by its bare name: both sit in one folder, and the
+// name stands as a whole word, as namingPattern reads a path.
+export function namesSibling(namer, path, text) {
+  const folder = folderOf(path);
+  return folderOf(namer) === folder && namingPattern(path.slice(folder.length), []).test(text);
 }
 
 // The files each file in `edges` ({ from, to }) leads to, one way: Map(file → its ends).
@@ -72,21 +96,85 @@ export function testHelpers(suites, edges) {
   return [...testSide].filter((f) => !isSuite.has(f));
 }
 
-// The files reaching the `changed` ones, each with its steps from the nearest: Map(file → steps), a changed file 0.
-// A step is an import (`edges`), or a helper of `helpers` whose text in `texts` names the file by its path.
-function reachSteps({ changed, edges, helpers, texts }) {
+// The top-level definitions of the files whose texts `texts` holds, each read once (topLevelDefinitions): a reader of
+// them by path, null for a file it holds no text of or one of another kind.
+function definitionsReader(texts) {
+  const read = new Map();
+  return (file) => {
+    if (!read.has(file)) read.set(file, texts.has(file) ? topLevelDefinitions(file, texts.get(file)) : null);
+    return read.get(file);
+  };
+}
+
+// What of the file `importer` reaches through the file `file` it imports, `file` reached through its top-level names
+// `tied.get(file)`, or whole when it has none there: WHOLE, the importer's own names using them, or null for none.
+/** @returns {import("./top-level-definitions.mjs").Reach} */
+function throughImport(importer, file, { tied, texts, definitionsOf }) {
+  const names = tied.get(file);
+  if (names === undefined) return WHOLE;
+  const definitions = definitionsOf(importer);
+  const bindings = definitions && helperBindings(importer, texts.get(importer), file);
+  if (!definitions || bindings === WHOLE) return WHOLE;
+  return namesReached(definitions, (d) => !d.isImport && usesHelper(bindings, d.references, names));
+}
+
+// What of the helper `helper` reaches the file `file` by naming it, by its path or its bare name from its own folder,
+// outside an import statement (an import is an edge): WHOLE, the names whose definitions name it, or null when its
+// text names it nowhere.
+/** @returns {import("./top-level-definitions.mjs").Reach} */
+function throughNaming(helper, file, { texts, definitionsOf }) {
+  const pattern = namingPattern(file, []);
+  const names = (text) => pattern.test(text) || namesSibling(helper, file, text);
+  if (!names(texts.get(helper))) return null;
+  const definitions = definitionsOf(helper);
+  return definitions ? namesReached(definitions, (d) => !d.isImport && names(d.text)) : WHOLE;
+}
+
+// A reach of a file at a step, kept in `steps` (file → steps) and `tied` (file → the names it is reached through),
+// the file queued on `todo` again whenever what reaches it grows: `got` its Reach (top-level-definitions.mjs).
+const reacher = ({ steps, tied, todo }) => (file, got, step) => {
+  if (got === null) return;
+  const had = tied.get(file);
+  if (!steps.has(file)) {
+    steps.set(file, step);
+    if (got !== WHOLE) tied.set(file, got);
+  } else if (had === undefined) return;
+  else if (got === WHOLE) tied.delete(file);
+  else if ([...got].every((n) => had.has(n))) return;
+  else for (const n of got) had.add(n);
+  todo.push(file);
+};
+
+// The files reaching the `changed` ones: { steps, tied }, `steps` each file's steps from the nearest (a changed file
+// 0), `tied` the files reached only through some of their top-level names, by those names. A step is an import
+// (`edges`), or a helper of `helpers` whose text in `texts` names the file by its path, or by its bare name from its
+// own folder, or a run list of `runLists` whose text names the file by its path, reached whole. A helper naming a file
+// reaches it through the definitions naming it (throughNaming); its importer, a suite aside, through the definitions
+// using those (throughImport); a suite's own use is the caller's to read.
+function reachSteps({ changed, edges, helpers, runLists, texts, suites }) {
   const importers = adjacency(edges, ["to", "from"]);
-  const steps = new Map(changed.map((f) => [f, 0]));
-  const todo = [...changed];
-  for (let k = 0; k < todo.length; k += 1) {
-    const file = todo[k];
-    const pattern = namingPattern(file, []);
-    const naming = helpers.filter((h) => !steps.has(h) && texts.has(h) && pattern.test(texts.get(h)));
-    for (const f of [...(importers.get(file) ?? []), ...naming]) {
-      if (!steps.has(f)) { steps.set(f, steps.get(file) + 1); todo.push(f); }
-    }
+  const isSuite = new Set(suites);
+  const reached = { steps: new Map(changed.map((f) => [f, 0])), tied: new Map(), todo: [...changed] };
+  const reach = reacher(reached);
+  const reading = { tied: reached.tied, texts, definitionsOf: definitionsReader(texts) };
+  const lists = runLists.filter((x) => texts.has(x));
+  for (let k = 0; k < reached.todo.length; k += 1) {
+    const file = reached.todo[k];
+    const step = reached.steps.get(file) + 1;
+    for (const f of importers.get(file) ?? []) if (!isSuite.has(f) || !reached.tied.has(file)) reach(f, throughImport(f, file, reading), step);
+    for (const h of helpers.filter((x) => texts.has(x))) reach(h, throughNaming(h, file, reading), step);
+    const pathPattern = lists.length ? namingPattern(file, []) : null;
+    for (const r of lists) reach(r, pathPattern.test(texts.get(r)) ? WHOLE : null, step);
   }
-  return steps;
+  return { steps: reached.steps, tied: reached.tied };
+}
+
+// Whether the suite `suite`, its text `text`, uses what reaches through the file `file` it imports: always when `file`
+// is reached whole, else when it uses one of the names `tied` holds for it.
+function suiteUses([suite, text], file, tied) {
+  const names = tied.get(file);
+  if (names === undefined || text === undefined) return true;
+  return usesHelper(helperBindings(suite, text, file), codeReferences(suite, text), names);
 }
 
 // Of `files`, the one fewest steps from a changed file, by path among equals; null for none.
@@ -95,12 +183,24 @@ function nearestOrNull(files, steps) {
   return [...files].sort(order)[0] ?? null;
 }
 
+// The reached files of `named` the suite `suite`, its text `text`, names by path or by its bare name from its own
+// folder; a file `tied` holds, reached through some of its names, only outside the suite's import statements, which
+// import it whole as the edges say. `anyNamed`: a pattern any of `named`'s paths matches, or null for none.
+function namedBySuite([suite, text], { named, anyNamed, tied }) {
+  if (text === undefined) return [];
+  const outside = tied.size ? textOutsideImports(suite, text) : text;
+  const own = (f) => (tied.has(f) ? outside : text);
+  const namedByPath = anyNamed?.test(text) ? named.filter((f) => namingPattern(f, []).test(own(f))) : [];
+  return [...namedByPath, ...named.filter((f) => namesSibling(suite, f, own(f)))];
+}
+
 // The reader tests of the `changed` files where a project records its `edges` ({ from, to }), among `suites`, with
-// `texts` each suite's and helper's text by path, `helpers` testHelpers' list: each { file, through }, in the suites'
-// order, `through` the reached file the suite imports or names that is nearest a changed file, null when that is a
-// changed file, or the suite is one.
-export function readersThroughEdges({ changed, suites, edges, helpers, texts }) {
-  const steps = reachSteps({ changed, edges, helpers, texts });
+// `texts` each suite's, helper's and run list's text by path, `helpers` testHelpers' list, `runLists` the project's run
+// lists: each { file, through }, in the suites' order, `through` the reached file the suite imports or names that is
+// nearest a changed file, null when that is a changed file, or the suite is one.
+export function readersThroughEdges({ changed, suites, edges, helpers, runLists = [], texts: written }) {
+  const texts = new Map([...written].map(([file, text]) => [file, namingText(file, text)]));
+  const { steps, tied } = reachSteps({ changed, edges, helpers, runLists, texts, suites });
   const imports = adjacency(edges, ["from", "to"]);
   const isSuite = new Set(suites);
   const named = [...steps.keys()].filter((f) => !isSuite.has(f));
@@ -109,9 +209,9 @@ export function readersThroughEdges({ changed, suites, edges, helpers, texts }) 
   for (const suite of suites) {
     const text = texts.get(suite);
     if (steps.get(suite) === 0) { readers.push({ file: suite, through: null }); continue; }
-    const imported = (imports.get(suite) ?? []).filter((f) => steps.has(f) && !isSuite.has(f));
-    const byPath = text !== undefined && anyNamed?.test(text) ? named.filter((f) => namingPattern(f, []).test(text)) : [];
-    const via = nearestOrNull([...imported, ...byPath], steps);
+    const reaching = (f) => steps.has(f) && !isSuite.has(f) && suiteUses([suite, text], f, tied);
+    const imported = (imports.get(suite) ?? []).filter(reaching);
+    const via = nearestOrNull([...imported, ...namedBySuite([suite, text], { named, anyNamed, tied })], steps);
     if (via !== null) readers.push({ file: suite, through: steps.get(via) === 0 ? null : via });
   }
   return readers;

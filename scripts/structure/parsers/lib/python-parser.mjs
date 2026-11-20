@@ -9,13 +9,17 @@
 // and Python's version: Python's message, which can quote the file's own text, is never read. Writes nothing.
 //
 // Resolution: a relative import from the file's own folder, one dot per folder up; an absolute one in the importing
-// file's folder, then each folder above it, nearest first, as a suite putting its parent folder on `sys.path` finds a
-// shared helper, then the root, then `src/` where it is a folder, at the first of them where its whole dotted name
-// resolves, a partial match passing on to the next; `a.b` is `a/b/__init__.py` or `a/b.py`, or a folder with no
+// file's folder, then each folder the file's `sys.path` calls add, then each folder above it, nearest first, as a suite
+// putting its parent folder on `sys.path` finds a shared helper, then the root, then `src/` where it is a folder, at the
+// first of them where its whole dotted name resolves, a partial match passing on to the next; `a.b` is `a/b/__init__.py` or `a/b.py`, or a folder with no
 // `__init__.py`, a namespace package; `from a import b` names `b`'s file when it is a submodule, `a`'s otherwise. A
 // namespace package imported whole: no edge, and not unresolved. Resolved nowhere: unresolved and the repository's own
 // when its first part is at the root or in `src/`, else not the repository's own; a relative one not found: unresolved
-// and the repository's own. Any other folder added to `sys.path` at run time is not seen.
+// and the repository's own. A folder the file adds by `sys.path.insert(<i>, X)` or `sys.path.append(X)` is searched
+// when X is the root joined with literal parts by `os.path.join`, `Path`, `/` or `.joinpath`, the root a chain of
+// `os.path.dirname`, `.parent` or `.parents[k]` up from `__file__`, or a name imported from a file that sets it so; the
+// last insert first, the appends after. Any other folder added to `sys.path` at run time, one from a variable or
+// computed another way, is not seen.
 
 import { execFileSync } from "node:child_process";
 import { statSync } from "node:fs";
@@ -94,28 +98,61 @@ export function pythonParser(root, { files, declared }) {
   const parsedOutput = parseReaderOutput(output, files);
   if (!parsedOutput) return { stop: "the Python reader's output does not read" };
   if (parsedOutput.stop) return stopOnUnreadFile(parsedOutput.stop, parsedOutput.version);
-  const read = parsedOutput.files.map(({ file, imports }) => ({ file, imports: imports.flatMap((i) => resolveImport(root, file, i)) }));
+  const added = listAddedFolders(root, parsedOutput.files);
+  const read = parsedOutput.files.map(({ file, imports }) => ({ file, imports: imports.flatMap((i) => resolveImport(root, file, copyWithAddedFolders(i, file, added))) }));
   const wanted = new Set(declared), declarations = Object.create(null);
   for (const row of parsedOutput.files) if (wanted.has(row.file)) declarations[row.file] = markExported(row);
   const given = new Set(files);
-  const heritage = parsedOutput.files.flatMap(({ file, bases }) => [...new Set(bases.map((b) => findBaseFile(root, file, b)))]
+  const heritage = parsedOutput.files.flatMap(({ file, bases }) => [...new Set(bases.map((b) => findBaseFile(root, file, copyWithAddedFolders(b, file, added))))]
     .filter((to) => to !== null && to !== file && given.has(to)).map((to) => ({ from: file, to, kind: "inheritance" })));
-  const foundNowhere = listImportsFoundNowhere(root, parsedOutput.files);
+  const foundNowhere = listImportsFoundNowhere(root, parsedOutput.files, added);
   return { read, heritage, declarations, tool: `Python ${toMajorMinor(parsedOutput.version)}`, foundNowhere };
 }
 
 // The absolute imports in `rows` found in no search place, their first part at neither the root nor `src/`, and not the
 // standard library's: each { file, name }, the importing file and the dotted name.
-function listImportsFoundNowhere(root, rows) {
-  const isNowhere = (file, i) => i.level === 0 && !i.stdlib && findStartFolder(root, file, i) === null
+function listImportsFoundNowhere(root, rows, added) {
+  const isNowhere = (file, i) => i.level === 0 && !i.stdlib && findStartFolder(root, file, copyWithAddedFolders(i, file, added)) === null
     && !isFirstPartAtRoot(root, i.module);
   return rows.flatMap(({ file, imports }) => imports.filter((i) => isNowhere(file, i)).map((i) => ({ file, name: i.module })));
 }
 
+// A copy of the import or base `item` of the file `file`, with the folders its file puts on sys.path (`added`,
+// listAddedFolders') as its `added`.
+function copyWithAddedFolders(item, file, added) {
+  return { ...item, added: added.get(file) };
+}
+
+// a folder joined from literal parts, root-relative, "" the root: null when a part is absolute or names a drive, or the
+// folder leaves the root
+function joinLiteralParts(parts) {
+  const unsafe = parts.some((p) => p.startsWith("/") || p.includes("\\") || p.includes(":"));
+  const folder = posix.join(".", ...parts.filter((p) => p !== ""));
+  const leavesRoot = folder === ".." || folder.startsWith("../");
+  if (unsafe || leavesRoot) return null;
+  return folder === "." ? "" : folder.split("/").filter(Boolean).join("/");
+}
+
+// the folders each file's `sys.path` calls add, a Map of file to root-relative folders in the order Python searches
+// them, the last insert first, the appends after in line order; a root named by an import counts only when the file
+// it comes from sets that name to the root
+function listAddedFolders(root, rows) {
+  const rootNames = new Map(rows.map((r) => [r.file, r.rootNames]));
+  const namesRoot = (file, via) => via === null || (rootNames.get(findBaseFile(root, file, via)) ?? []).includes(via.rest.at(-1));
+  const added = new Map();
+  for (const { file, sysPath } of rows) {
+    const byLine = [...sysPath].sort((a, b) => a.line - b.line);
+    const ordered = [...byLine.filter((s) => s.front).reverse(), ...byLine.filter((s) => !s.front)];
+    const folders = ordered.filter((s) => namesRoot(file, s.via)).map((s) => joinLiteralParts(s.parts)).filter((f) => f !== null);
+    added.set(file, [...new Set(folders)]);
+  }
+  return added;
+}
+
 // the file a class base comes from, root-relative: the longest of its dotted path's prefixes, its own name left off, that
-// is a module's file; null for none
-function findBaseFile(root, file, { level, module, rest }) {
-  const start = findStartFolder(root, file, { module, level });
+// is a module's file; null for none; `added` the folders the file's `sys.path` calls add
+function findBaseFile(root, file, { level, module, rest, added = [] }) {
+  const start = findStartFolder(root, file, { module, level, added });
   if (start === null) return null;
   const from = module ? posix.join(start, ...module.split(".")) : start;
   for (let n = rest.length - 1; n >= 0; n--) {
@@ -150,9 +187,12 @@ const KINDS = ["fn", "class", "type", "other"];
 const isDeclaration = (d) => isObject(d) && isText(d.name) && KINDS.includes(d.kind);
 const isBase = (b) => isObject(b) && isInt(b.level) && isModule(b.module)
   && Array.isArray(b.rest) && b.rest.length > 0 && b.rest.every(isText);
+const isSysPathFolder = (s) => isObject(s) && typeof s.front === "boolean" && isInt(s.line)
+  && Array.isArray(s.parts) && s.parts.every(isText) && (s.via === null || isBase(s.via));
 const isRow = (r, file) => r && r.file === file && Array.isArray(r.imports) && r.imports.every(isImport)
   && Array.isArray(r.declarations) && r.declarations.every(isDeclaration) && isNames(r.all)
-  && Array.isArray(r.bases) && r.bases.every(isBase);
+  && Array.isArray(r.bases) && r.bases.every(isBase) && Array.isArray(r.rootNames) && r.rootNames.every(isText)
+  && Array.isArray(r.sysPath) && r.sysPath.every(isSysPathFolder);
 const isStop = (s, files) => isObject(s) && files.includes(s.file) && ["syntax", "nesting"].includes(s.why) && isInt(s.line);
 
 // the reader's output read and checked against its shape: one row per file given, in order; null when it is not
@@ -192,11 +232,11 @@ function foldersAbove(folder) {
 }
 
 // the folder an import's dotted path starts from: a relative one's by its dots; an absolute one's, the first search place
-// where its whole name resolves; null when none does
-function findStartFolder(root, file, { module, level }) {
+// where its whole name resolves, the folders `added` by the file's `sys.path` calls after its own; null when none does
+function findStartFolder(root, file, { module, level, added = [] }) {
   const own = posix.dirname(file) === "." ? "" : posix.dirname(file);
   if (level > 0) return posix.join(own, ...Array(level - 1).fill(".."));
-  const places = [own, ...foldersAbove(own), "", ...(isDir(join(root, "src")) ? ["src"] : [])];
+  const places = [own, ...added, ...foldersAbove(own), "", ...(isDir(join(root, "src")) ? ["src"] : [])];
   return places.find((p) => isWholeAt(root, p, module)) ?? null;
 }
 

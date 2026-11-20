@@ -1,6 +1,6 @@
 # Roadkeeper's tools
 
-Read this when setting up Roadkeeper's tools in a project: genesis's walking skeleton, adopt's tour, or the slice a session start asks for. The tools are the green, the merge guard, red-before, same-cases, reader-tests and the check at write; each script's header in `${CLAUDE_PLUGIN_ROOT}/scripts/` says its command. All read the project's `docs/roadkeeper/commands.json`; until it exists, the hooks let everything pass.
+Read this when setting up Roadkeeper's tools in a project: genesis's walking skeleton, adopt's tour, or the slice a session start asks for. The tools are the green, the merge guard, red-before, same-cases, reader-tests, the check at write, and slice-runs, the retro's table of a slice's runs; each script's header in `${CLAUDE_PLUGIN_ROOT}/scripts/` says its command. All but slice-runs read the project's `docs/roadkeeper/commands.json`; until it exists, the hooks let everything pass.
 
 Take the steps in order.
 
@@ -27,6 +27,7 @@ Take the steps in order.
    - `docTests` (optional, with `runTests`): the doc tests, the test files that read a `readByNothing` file; a test reading files it does not name (a sweep) goes here too. Once it names a test, a document-only commit lands only on its own green stamp; empty or absent, it lands on a nearby one. Once declared, `[]` included, a test naming a listed path in neither this list nor `notDocTests` turns the green red; until then the green prints a line for it.
    - `notDocTests` (optional): test files that name a listed path but read none, such as one writing a fixture copy.
    - An entry of either list naming no file turns the green red.
+   - `runLists` (optional): the run lists, files listing commands a test runs (a hooks file, git hooks, package scripts), as paths or the patterns `readByNothing` takes. Where `structure.json` records the edges, `reader-tests` lists a test naming a run list for each script the run list names by its path, and for what that script imports; the green's `--rerun-failed` and same-cases' suite records read the same reach.
    - `install` (optional): the folder holding the installed packages, its path from the root; the stack's when left out. Never `.venv`: its editable install points at the main checkout's source, so a copy's tests would import the main checkout's code.
    - `filesPerRun` (optional): how many test files one run of `runTests` takes; the stack's when left out.
 

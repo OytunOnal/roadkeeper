@@ -4,8 +4,8 @@ Every rule here is a default. A rule that opens with a condition ("with a databa
 
 ## Rules
 
-- Lint limits: files 400 lines, functions 40 lines, nesting 3, parameters 3, no nested ternaries, no unused names, a condition of more than two clauses named (an assertion's argument, a test's oracle, is exempt; an oracle written as the condition of an `if`, a loop or a ternary is named like any other). A JavaScript or TypeScript project's lint copy enforces them; in another, the review does.
-- Logs are structured. Records the code produces go under a dated home. A `.gitignore` line names a home, never a name shape (`*.tmp`).
+- Lint limits: files 400 lines, functions 40 lines, nesting 3, parameters 3, no nested ternaries, no unused names, a condition of more than two clauses named (an assertion's argument, a test's oracle, is exempt; an oracle written as the condition of an `if`, a loop or a ternary is named like any other). A JavaScript or TypeScript project's lint copy enforces them; in another, the review does. A file no linter reads (a JavaScript project's shell script) is held to them by the review, which reads it whole whenever a change touches it.
+- Logs are structured. Records the code produces go under a dated home; a record looked up by a key (a tree's hash) is named by that key, its date inside. A `.gitignore` line names a home, never a name shape (`*.tmp`).
 - Errors are visible: none is swallowed; each reaches the log or the user.
 - With a served product, a health signal states every behaviour-gating flag and version: which prompt, which model, which switches are live.
 - With a database, schema changes go through versioned migrations.

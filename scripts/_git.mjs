@@ -1,6 +1,6 @@
 // @level infrastructure
 // Roadkeeper — git and the PATH: a program found on the PATH's absolute folders, one pinned `git` call, a repository's main
-// checkout, the files a worktree's index tracks, and the shape of a git object's full name. scripts/tools/_main_checkout.py holds the same main-checkout rule for the repository's tools.
+// checkout, the files a worktree's index tracks, and the shape of a git object's full name.
 //
 // A program runs as separate arguments, never through a shell, found on the PATH's absolute folders alone: Windows runs
 // a bare name from the current folder first, and a program in the project under check must never run. No `git` there

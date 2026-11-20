@@ -2,8 +2,8 @@
 // @level main
 // Roadkeeper — the structure stamp, the last step of a project's structure command, run in the project root:
 // `node <roadkeeper>/scripts/structure-stamp.mjs`. It writes into structure.json each module's `files` and the
-// files no module holds (`loose`), read from disk, and the `digest` of their contents, so structure-check.mjs can tell a
-// graph older than its code (scripts/structure/, `stamp`).
+// files no module holds (`loose`), read from disk, and the `digest` of their contents and of the test files outside the
+// modules, so structure-check.mjs can tell a graph older than its code (scripts/structure/, `stamp`).
 //
 // Writes: docs/roadkeeper/structure.json only, in place, keeping every other field — and only when no folder on the way to
 // it is a link. Runs no command and asks git nothing. Takes no argument: any prints the usage line and exits 2, writing

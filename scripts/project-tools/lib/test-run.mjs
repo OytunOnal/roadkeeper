@@ -6,11 +6,13 @@
 // to find a crash the run did not write. `{files}`, an argument of its own, becomes the run's files, each its own
 // argument; `{out}`, anywhere in an argument, a results file in the caller's folder. A run no case is read from is
 // said, with why and its last lines. The green's `{tests}` step runs every test file of the worktree so, in place, and
-// says only the failed cases and a total line; the green's doc tests run the same way, alone.
+// says only the failed cases, a total line and its slowest test files with their seconds: a run of one file's own, else
+// its cases' times summed from the results; the green's doc tests run the same way, alone.
 
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
+import { formatSlowestLines, SLOWEST_MAX, TESTS_LABEL } from "../../_slowest-lines.mjs";
 import { plural } from "../../_text.mjs";
 import { adapterOf } from "../adapters/adapters.mjs";
 import { crashedFiles, listedByFile, unknownMarked } from "./case-outcomes.mjs";
@@ -23,8 +25,11 @@ import { worktreeInstall, worktreeRoot } from "./worktree.mjs";
 const FILES = "{files}"; // runTests' argument the test files take the place of
 const OUT = "{out}";     // runTests' text a results file's path takes the place of
 const WORKERS = availableParallelism(); // runs side by side: one per processor
-const TESTS_LABEL = "tests"; // the green's `{tests}` step's lines start with it
 const NOT_FAILED = new Set(["PASS", "SKIP"]); // the outcomes the `{tests}` step does not list: a skipped case is no failure
+const OWN_SAID = "each its run's seconds"; // the slowest files' seconds, each a run's own
+const SUMMED_SAID = "each its cases' times summed, a file's load time left out"; // each its cases' times summed
+// some a run's own, some its cases' times summed
+const MIXED_SAID = "each its run's seconds when it ran alone, else its cases' times summed, a file's load time left out";
 
 // The test files' patterns of a project's `commands` (the commands file's, read): its `tests`, else its stack adapter's.
 const testPatterns =(commands) => (commands.tests ? [commands.tests] : adapterOf(commands.stack).tests);
@@ -37,10 +42,11 @@ export function testFileMatcher(commands, matches) {
 }
 
 // The project's tests at the worktree holding `dir`, ready to run by name, its install linked in when it is a linked
-// worktree with none (worktree.mjs): { root, installFrom, said, commands, adapter, patternsLine, isTest }, `installFrom`
-// the checkout whose install a tree laid out for it links (null: none), `said` the line saying why none is linked or
-// null, `patternsLine` the test files' patterns (testPatterns) as a line says them, `isTest(path)` whether `matches`
-// reads the path as matching one of them; or { refused }, the line saying why not.
+// worktree with none (worktree.mjs): { root, installFrom, said, commands, adapter, patternsLine, isTest, isRunList },
+// `installFrom` the checkout whose install a tree laid out for it links (null: none), `said` the line saying why none is
+// linked or null, `patternsLine` the test files' patterns (testPatterns) as a line says them, `isTest(path)` whether
+// `matches` reads the path as matching one of them, `isRunList(path)` whether one of the commands file's `runLists`
+// patterns names it (null when it declares none); or { refused }, the line saying why not.
 export function testSetup({ dir, matches }) {
   const root = worktreeRoot(dir);
   if (!root) return { refused: "not in a git repository" };
@@ -51,8 +57,14 @@ export function testSetup({ dir, matches }) {
   const adapter = adapterOf(commands.stack);
   const { from, said } = worktreeInstall(root, commands.install);
   const [patternsLine, isTest] = [testPatterns(commands).join(" or "), testFileMatcher(commands, matches)];
-  return { root, installFrom: from, said: said ?? null, commands, adapter, patternsLine, isTest };
+  const runLists = commands.runLists ?? [];
+  const isRunList = runLists.length ? (path) => runLists.some((pattern) => matches(pattern, path)) : null;
+  return { root, installFrom: from, said: said ?? null, commands, adapter, patternsLine, isTest, isRunList };
 }
+
+// The run lists of the worktree `setup` holds (testSetup's): the files of its root `isRunList` names; none listed when
+// the commands file declares none.
+export const worktreeRunLists = ({ root, isRunList }) => (isRunList ? workingFiles(root).filter(isRunList) : []);
 
 const expanded = (argv, files, out) => argv.flatMap((a) => (a === FILES ? files : [a.replaceAll(OUT, out)]));
 
@@ -137,6 +149,34 @@ const totalLine = ({ cases, files, passes, started }) =>
   `${TESTS_LABEL}: ${plural(cases.length, "case")} in ${plural(files.length, "file")}, all pass: ${passes ? "True" : "False"} ` +
   `(${((Date.now() - started) / 1000).toFixed(1)} s)`;
 
+// The test files of a run of several, each { file, seconds, summed: true }, its seconds its cases' times summed; a file
+// none of whose cases has a time is left out.
+function sumCaseSeconds(run) {
+  const seconds = new Map();
+  const timed = run.cases.filter((c) => Number.isFinite(c.time) && run.group.includes(c.file));
+  for (const c of timed) seconds.set(c.file, (seconds.get(c.file) ?? 0) + c.time);
+  return [...seconds].map(([file, sum]) => ({ file, seconds: sum, summed: true }));
+}
+
+// Each test file's seconds by the runs that ran it, each { file, seconds, summed }: a run of one file gives it the run's
+// own, a run of several each file its cases' times summed (sumCaseSeconds).
+const collectFileSeconds = (runs) => runs.flatMap((r) =>
+  (r.group.length === 1 ? [{ file: r.group[0], seconds: r.ran.seconds, summed: false }] : sumCaseSeconds(r)));
+
+// What the files' seconds (collectFileSeconds') are: each a run's own, each its cases' times summed, or some of each.
+function describeSeconds(timed) {
+  if (!timed.some((t) => t.summed)) return OWN_SAID;
+  return timed.some((t) => !t.summed) ? MIXED_SAID : SUMMED_SAID;
+}
+
+// The lines naming the SLOWEST_MAX test files of the runs, slowest first, each with its seconds (formatSlowestLines).
+function listSlowestLines(runs) {
+  const timed = collectFileSeconds(runs);
+  const untimed = runs.reduce((n, r) => n + r.group.length, 0) - timed.length;
+  const slowest = timed.sort((a, b) => b.seconds - a.seconds).slice(0, SLOWEST_MAX);
+  return formatSlowestLines({ how: describeSeconds(timed), slowest, untimed });
+}
+
 // The test files a run failed, in the files' order: each holding a failed or unknown case, and each of a run that read
 // no case.
 const failedFiles = (files, runs, failed) => {
@@ -146,9 +186,9 @@ const failedFiles = (files, runs, failed) => {
 
 // The green's `{tests}` step in the worktree `setup` holds (testSetup's): `files`, by their paths from its root, else
 // every test file of it (worktreeTests), run by name in place, its results in a throwaway folder of the OS temp folder,
-// removed after. Says each failed or unknown case with its detail under its file, then the total line; a run that read
-// no case is said. A promise of { passes, failed }: whether every case passed or was skipped, every run reading one,
-// and the test files that failed (failedFiles).
+// removed after. Says each failed or unknown case with its detail under its file, then the total line, then the slowest
+// test files (listSlowestLines); a run that read no case is said. A promise of { passes, failed, cases, files }: whether every case passed or was skipped, every run
+// reading one, the test files that failed (failedFiles), every case read and the test files run.
 export async function testsStepRun(setup, say, files = worktreeTests(setup)) {
   const started = Date.now();
   if (!files.length) say(`${TESTS_LABEL}: no file matches ${setup.patternsLine}`);
@@ -160,7 +200,8 @@ export async function testsStepRun(setup, say, files = worktreeTests(setup)) {
     for (const line of listedByFile(failed)) say(line);
     const passes = cases.length > 0 && !failed.length && runs.every((r) => r.cases.length);
     say(totalLine({ cases, files, passes, started }));
-    return { passes, failed: failedFiles(files, runs, failed) };
+    for (const line of listSlowestLines(runs)) say(line);
+    return { passes, failed: failedFiles(files, runs, failed), cases, files };
   } finally {
     rmSync(results, { recursive: true, force: true });
   }

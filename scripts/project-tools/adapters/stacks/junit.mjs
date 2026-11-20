@@ -1,7 +1,7 @@
 // @level domain
 // Roadkeeper — the test cases of a JUnit XML text: each <testcase>, with the names of the <testsuite> elements around it,
-// its name, classname and file attributes, and its outcome: FAIL with a <failure> or <error> inside, else SKIP with a
-// <skipped>, else PASS; a FAIL's detail is its failure's message, else its text, and its text is kept beside; a SKIP's
+// its name, classname and file attributes, its time attribute's seconds (null for none or a malformed one), and its
+// outcome: FAIL with a <failure> or <error> inside, else SKIP with a <skipped>, else PASS; a FAIL's detail is its failure's message, else its text, and its text is kept beside; a SKIP's
 // reason is its skip's message. A hand scanner over the text, bounded by its length: comments, CDATA outside a failure,
 // processing instructions and declarations are passed over; attribute values are decoded of the five named entities
 // and the numeric ones. Reads no tag it cannot parse.
@@ -14,6 +14,10 @@ const TAG_END = /\s*(\/?)>/y; // a tag's end, "/" when it is empty
 const PASSED_OVER = [["<!--", "-->"], ["<![CDATA[", "]]>"], ["<?", "?>"], ["<!", ">"]];
 const NAMED = new Map([["lt", "<"], ["gt", ">"], ["amp", "&"], ["quot", "\""], ["apos", "'"]]); // XML's five entities
 const MAX_CODE_POINT = 0x10ffff; // Unicode's last: a reference past it reads as "?"
+const SECONDS = /^\d+(?:\.\d+)?(?:[eE][-+]?\d+)?$/; // a time attribute as JUnit writers write it: "0.070840", "1e-3"
+
+// A time attribute's seconds; null for none or one not written as seconds.
+const parseSeconds = (time) => (time !== undefined && SECONDS.test(time.trim()) ? Number(time.trim()) : null);
 
 const codePoint = (n) => {
   const isCharacter = Number.isInteger(n) && n > 0 && n <= MAX_CODE_POINT;
@@ -60,7 +64,7 @@ function onSuite(state, { close, empty, attributes }) {
 function onCase(state, { close, empty, attributes }) {
   if (!close) {
     state.open = { suites: [...state.suites], name: attributes.name ?? "", classname: attributes.classname ?? "",
-      file: attributes.file ?? "", outcome: "PASS", detail: "", text: "", skipReason: "" };
+      file: attributes.file ?? "", time: parseSeconds(attributes.time), outcome: "PASS", detail: "", text: "", skipReason: "" };
   }
   const ends = close || empty;
   if (ends && state.open) { state.cases.push(state.open); state.open = null; }
@@ -89,8 +93,9 @@ function onText(state, text) {
   if (kept) state.open.text = (state.open.text + text).slice(0, DETAIL_KEPT);
 }
 
-// The test cases of the JUnit text, in their order: { suites, name, classname, file, outcome, detail, text, skipReason
-// }, `text` the failure's text, `skipReason` a SKIP's <skipped> message, each "" for none.
+// The test cases of the JUnit text, in their order: { suites, name, classname, file, time, outcome, detail, text,
+// skipReason }, `time` its seconds or null, `text` the failure's text, `skipReason` a SKIP's <skipped> message, each ""
+// for none.
 export function junitCases(text) {
   const state = { suites: [], open: null, inFailure: false, cases: [] };
   let at = 0;

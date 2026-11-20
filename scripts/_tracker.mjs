@@ -136,9 +136,9 @@ function checkMilestonesWhole(issues, milestones) {
 }
 
 // A read started within `until`: { fetched, name, url, call, upTo }, its time, the repository `gh` names and its
-// address, `call(args)`, one `gh` call given what is left of the read's time, and `upTo(endpoint, cap)`, a REST list
-// read page by page until a short page or the cap, { items, capped }: a tracker larger than the snapshot is never
-// fetched whole.
+// address, `call(args)`, one `gh` call given what is left of the read's time, and `upTo(endpoint, cap, isEnough)`, a
+// REST list read page by page until a short page, the cap, or a page `isEnough(page)` says ends the read,
+// { items, capped }: a tracker larger than the snapshot is never fetched whole.
 function startRead(root, until, run) {
   // the read's time is its start: a read started later saw every write before it
   const fetched = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
@@ -150,7 +150,7 @@ function startRead(root, until, run) {
   const repo = JSON.parse(call(["repo", "view", "--json", "nameWithOwner,url"]));
   const name = String(repo.nameWithOwner || "");
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(name)) throw new Error(`gh named no repository: ${cutAt(name, 80)}`);
-  const upTo = (endpoint, cap) => {
+  const upTo = (endpoint, cap, isEnough = () => false) => {
     const items = [];
     for (let page = 1; items.length < cap; page++) {
       const query = `${endpoint.includes("?") ? "&" : "?"}per_page=${PER_PAGE}&page=${page}`;
@@ -158,6 +158,7 @@ function startRead(root, until, run) {
       if (!Array.isArray(got)) break;
       items.push(...got);
       if (got.length < PER_PAGE) break;
+      if (isEnough(got)) return { items: items.slice(0, cap), capped: false };
     }
     return { items: items.slice(0, cap), capped: items.length >= cap };
   };
@@ -327,6 +328,19 @@ const liveResult = (snap) => ({ snap, live: true, error: null, failure: null, fr
 
 // a failed read's result, readTracker's shape: the tree's snapshot, `gh`'s first line and the failure's kind
 const failedResult = (root, e) => ({ ...readTreeSnapshot(root), live: false, error: ghError(e), failure: classifyFailure(e) });
+
+// A read of the repository's REST lists within `budget` milliseconds, for a command needing what the snapshot leaves
+// out (an issue's timeline): `list(path, cap, isEnough)`, startRead's `upTo` on `repos/<repository>/<path>`. Throws
+// an Error carrying `gh`'s own first line when `gh` fails.
+export function openTrackerRead(root, budget, run = gh) {
+  const wrapFailure = (e) => Object.assign(new Error(ghError(e)), { kind: classifyFailure(e) });
+  let read;
+  try { read = startRead(root, Date.now() + budget, run); } catch (e) { throw wrapFailure(e); }
+  const list = (path, cap, isEnough) => {
+    try { return read.upTo(`repos/${read.name}/${path}`, cap, isEnough); } catch (e) { throw wrapFailure(e); }
+  };
+  return { list };
+}
 
 // a milestone's title while another takes its own: unique by its number, and opening on no version
 const temporaryTitle = (number, title) => `renumbering #${number}: ${title}`;

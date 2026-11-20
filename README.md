@@ -61,12 +61,12 @@ flowchart TD
 - **Version by version:** the work is planned as small versions, each named by what the product can do; new ideas wait as candidates, and at each version's close everything open is re-planned with you, its critique's and architecture read's findings included. A version's number says what changed for you: the first number rises when you must act.
 - **Slice by slice:** each slice is built test-first and reviewed in a pull request against your coding standards, its spec or issue, and security; one larger than a ticket, or with a new screen, is first questioned with you until every decision is made and written as a spec. Before it merges, you see what it changes that can be seen, served from its branch; once its checks pass, it merges on its own.
 - **Tried for real:** a merged slice turns real-green only once it has been used for real and works.
-- **A retro after each slice:** it reads the slice's sessions and proposes changes to your checks, rules and docs; it brings you those seen in two of the last three retros, or severe ones, and keeps the rest as notes.
+- **A retro after each slice:** it reads the slice's sessions and proposes changes to your checks, rules and docs; it brings you those seen in two of the last three retros, or severe ones, and keeps the rest as notes. Its table of what each session and agent did, and how long the slice waited on you, comes from one command, counted the same way every time.
 - **At each version's close:** a critique walks the product as a first-time user, the architecture is read, and from v1 on a release says what the product can do now; before the first launch, the name, the licence and the launch checklist are settled too.
 - **After launch:** `/roadkeeper:steward` takes each report: a bug is traced to the promise the product broke, with fixes offered for you to pick; an idea becomes a candidate.
 - **The Road:** one page drawn from the tracker and the code's structure, showing progress by version, what waits on you, and the code's levels and modules.
 - **Architecture:** the code follows clean architecture's dependency rule, the domain at the centre and every dependency pointing inward, and is grouped into deep modules: a folder behind one entry file, everything inside private, on one level or several, nested as it grows. The structure check holds both before every merge in JavaScript, TypeScript, Astro and Python code, The Road draws them, and each version's close reads the code against them, so what an agent writes stays legible as it grows. [The rules](skills/slice/references/structure.md).
-- **While it works:** hooks run your linter on every file written, keep each of the agent's shell calls to one plain command, and tell you at each session start what waits on you. A builder runs only the tests that reach the files its change touches, and a change to your documents alone runs only the tests that read them, so it goes green in seconds. A green that went red only under load reruns just the failed test files; a fresh worktree borrows your main checkout's install; and every step stops only when its work truly hangs, however large the project. When something fails, the tool says what really went wrong: a refused write names how the linter failed, a test whose result changed after a refactor says why under its line, a fresh worktree is told where to install, and the session-start line counts from the tracker itself or says the read ran out of time.
+- **While it works:** hooks run your linter on every file written, keep each of the agent's shell calls to one plain command, and tell you at each session start what waits on you. A builder runs only the tests that really run or read the files its change touches, and a change to your documents alone runs only the tests that read them, so it goes green in seconds. A refactor's proof that nothing changed takes about half the time when the old code already ran green, and the green names its slowest test files. The structure check says the map is out of date when a test changes its imports. A green that went red only under load reruns just the failed test files; a fresh worktree borrows your main checkout's install; and every step stops only when its work truly hangs, however large the project. When something fails, the tool says what really went wrong: a refused write names how the linter failed, a test whose result changed after a refactor says why under its line, a fresh worktree is told where to install, and the session-start line counts from the tracker itself or says the read ran out of time.
 
 What changed in each version: the [releases](https://github.com/OytunOnal/roadkeeper/releases).
 
@@ -116,7 +116,7 @@ It works when `docs/roadkeeper/road.html` opens with your project's name on it. 
 A change to one of these that makes you act, a file to move or a command to type differently, comes only in a major version, and its release says what to do.
 
 - **Skills**, each `/roadkeeper:<name>`: `adopt`, `brainstorm`, `design-critique`, `devils-advocate`, `genesis`, `idea`, `launch`, `market-research`, `product-critique`, `retro-spec`, `road`, `slice`, `steward`.
-- **Commands**, `node <roadkeeper>/scripts/<name>.mjs` in your project's root, `<roadkeeper>` being the folder Claude Code installed the plugin into, each with its usage in its header: `borrow-install`, `copy-lint-rules`, `green`, `reader-tests`, `red-before`, `road`, `same-cases`, `structure`, `structure-check`, `structure-plan`, `structure-stamp`, `version-forecast`.
+- **Commands**, `node <roadkeeper>/scripts/<name>.mjs` in your project's root, `<roadkeeper>` being the folder Claude Code installed the plugin into, each with its usage in its header: `borrow-install`, `copy-lint-rules`, `green`, `reader-tests`, `red-before`, `road`, `same-cases`, `slice-runs` (the retro's table; besides the tracker, it reads Claude Code's transcripts of the project, under `~/.claude`, read-only), `structure`, `structure-check`, `structure-plan`, `structure-stamp`, `version-forecast`.
 - **General rules**, `ROADKEEPER_STANDARDS.md` at Roadkeeper's root: the rules every project's review holds. A project changes one only by a departure, a line under `## Departures` in its `CODING_STANDARDS.md` naming the rule and why.
 - **Hooks**, each acting only in a project holding `docs/roadkeeper/`:
   - `nudge`, at session start, counts what waits on you from the tracker and, on the default branch only, redraws The Road from `issues.json`;
@@ -127,7 +127,7 @@ A change to one of these that makes you act, a file to move or a command to type
   - `skills-pointer`, at every session start and after a compact or a clear, tells the session to work from Roadkeeper's skill files.
 - **Files your project keeps**, under `docs/roadkeeper/`:
   - `structure.json`, the structure command's graph of your JavaScript, TypeScript, Astro and Python files (an Astro file's level tag opens its frontmatter; a Python file's is its first `#` comment, `# @level`), and `dependency-rules.md`, your levels and exceptions (`skills/slice/references/structure.md`);
-  - `commands.json`, your project's own commands, which the green, red-before, same-cases, `reader-tests` and the hooks run (`skills/slice/references/project-tools.md`): a green step `{tests}` runs every test file; `docTests` lists the tests that read your documents, so a change to documents alone runs only them, and `notDocTests` the tests that name a document without reading it. Its `js-ts` stack reads JUnit and ESLint's JSON, its `python` stack pytest's JUnit and the lint line `path:line:col: CODE message`; and `ceilings.json`, the files over 400 lines;
+  - `commands.json`, your project's own commands, which the green, red-before, same-cases, `reader-tests` and the hooks run (`skills/slice/references/project-tools.md`): a green step `{tests}` runs every test file; `docTests` lists the tests that read your documents, so a change to documents alone runs only them, and `notDocTests` the tests that name a document without reading it; `runLists` names the files listing commands a test runs, so `reader-tests` lists a test naming one for the scripts it runs. Its `js-ts` stack reads JUnit and ESLint's JSON, its `python` stack pytest's JUnit and the lint line `path:line:col: CODE message`; and `ceilings.json`, the files over 400 lines;
   - `one-pager.md`, `assumptions.md`, `ARCHITECTURE.md`, `threats.md`, `metrics.md`;
   - `design/`, `critiques/`, `research/`;
   - `issues.json`, the tracker's snapshot, and `road.html`, The Road, both written by the `road` command and the `road-redraw` hook; `road.html` by the `nudge` hook too.
@@ -142,16 +142,15 @@ A change to one of these that makes you act, a file to move or a command to type
 
 The next versions, by their titles:
 
-- v3.2.2 — Roadkeeper's own tests and records cost a builder less
-- v3.3.0 — Roadkeeper's own tools and rules cost a session less
-- v3.4.0 — Roadkeeper's tools say what they did, and a slice runs without a hand
-- v3.4.1 — Roadkeeper's skills and the Architecture tab read short and plain
-- v3.5.0 — The checks see more
-- v3.6.0 — Every project's checks fit its code
-- v3.6.1 — Roadkeeper's own checks are kept once and prove a change in one run
-- v3.6.2 — Roadkeeper's tools and tests split before they grow
-- v3.6.3 — Roadkeeper's busiest files split along what they do
-- v3.7.0 — The owner decides on a drawn page: the look before a merge, a slice's plan, the project's decisions and words
+- v3.4.0 — Roadkeeper's own tools and rules cost a session less
+- v3.5.0 — Roadkeeper's tools say what they did, and a slice runs without a hand
+- v3.5.1 — Roadkeeper's skills and the Architecture tab read short and plain
+- v3.6.0 — The checks see more
+- v3.7.0 — Every project's checks fit its code
+- v3.7.1 — Roadkeeper's own checks are kept once and prove a change in one run
+- v3.7.2 — Roadkeeper's tools and tests split before they grow
+- v3.7.3 — Roadkeeper's busiest files split along what they do
+- v3.8.0 — The owner decides on a drawn page: the look before a merge, a slice's plan, the project's decisions and words
 
 ## Proven on
 

@@ -14,7 +14,7 @@ import { redRun } from "./green-stamp.mjs";
 import { remoteHome } from "./landing.mjs";
 import { changedFiles } from "./near-stamp.mjs";
 import { changeReaders } from "./reader-scan.mjs";
-import { worktreeTests } from "./test-run.mjs";
+import { worktreeRunLists, worktreeTests } from "./test-run.mjs";
 
 const REMOTE = "origin"; // the remote whose default branch the change is found against
 const NAMES_SHOWN = 10;  // the files a line names, the rest counted: a load-flaky red is a handful
@@ -56,12 +56,12 @@ function rerunRefusal({ date, failed, step }) {
 }
 
 // The refusal of a red run whose failed files reach the change, or null: a failed file the change edits; one the
-// reader scan could not read; one reaching a changed file (reader-scan.mjs's changeReaders). `scope`: { root, red,
-// changed, recordedEdges }.
-function reachRefusal({ root, red, changed, recordedEdges }) {
+// reader scan could not read; one reaching a changed file (reader-scan.mjs's changeReaders), through the project's
+// declared run lists too. `scope`: { root, red, changed, recordedEdges, runLists }.
+function reachRefusal({ root, red, changed, recordedEdges, runLists }) {
   const edited = red.files.find((file) => changed.includes(file));
   if (edited !== undefined) return `${shownName(edited)} failed and the change edits it; fix it, or run the whole green`;
-  const scan = changeReaders({ root, tests: red.files, changed, recordedEdges });
+  const scan = changeReaders({ root, tests: red.files, changed, recordedEdges, runLists });
   if (scan.read < red.files.length) {
     const why = scan.said.find((line) => red.files.some((file) => line.startsWith(shownName(file)))) ?? "a file not read";
     return `a failed test file could not be read to tell whether it reaches the change (${why}); run the whole green`;
@@ -85,7 +85,8 @@ export function rerunnable({ root, main, tree, tests, recordedEdges }) {
   if (stranger !== undefined) return { refusal: `the red run names ${shownName(stranger)}, not a test file of this tree; run the green` };
   const change = changeOf(root, tree);
   if (change.refusal) return change;
-  const refusal = reachRefusal({ root, red, changed: change.changed, recordedEdges });
+  const runLists = tests ? worktreeRunLists(tests) : [];
+  const refusal = reachRefusal({ root, red, changed: change.changed, recordedEdges, runLists });
   return refusal ? { refusal } : { red };
 }
 

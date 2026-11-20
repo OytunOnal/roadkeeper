@@ -12,7 +12,8 @@
 // (lib/commands-file.mjs), the lint rules' copy, roadkeeper-lint/, against the plugin's scripts/lint/
 // (lib/rules-copy.mjs), docs/roadkeeper/dependency-rules.md and what the structure check reads, and the tracker
 // snapshot. It writes the install's link into a linked worktree that has none and pins what the main checkout pins
-// (lib/worktree.mjs), and the green stamp and a red run's record in the main checkout's .run/; a rerun asks git for the
+// (lib/worktree.mjs), and the green stamp, a red run's record and its passing suites' suite records in the main
+// checkout's .run/ (lib/suite-records.mjs); a rerun asks git for the
 // change against the remote's default branch and reads its failed files' text (lib/green-rerun.mjs). The commands it
 // runs are the project's own, run from the worktree's root, a `{tests}` step's over the test files git lists there,
 // a rerun's over its red run's failed test files among them, and the doc tests' over the files
@@ -31,22 +32,25 @@ import { globMatch, recordedEdges, report } from "../structure/structure.mjs";
 import { COMMANDS_FILE, namesDocTest, readCommands } from "./lib/commands-file.mjs";
 import { docTestListsPass, docTestLists, docTestsRun, greenInputs } from "./lib/green-doc-tests.mjs";
 import { rerunStampedLine, rerunnable } from "./lib/green-rerun.mjs";
-import { now, redAtStep, redOnTests, redRun, stampedRecord, writeRedRun, writeStamp } from "./lib/green-stamp.mjs";
+import { redAtStep, redOnTests, redRun, stampedRecord, writeRedRun, writeStamp } from "./lib/green-stamp.mjs";
 import { OWN_STAMP_ONLY, RUN_GREEN, landingRefusal as landingRefusalOf } from "./lib/landing.mjs";
 import { nearStamp } from "./lib/near-stamp.mjs";
 import { readerTests as readerTestsOf } from "./lib/reader-tests.mjs";
+import { now } from "./lib/record-folder.mjs";
 import { redBefore as redBeforeOf } from "./lib/red-before.mjs";
 import { RULES_COPY, writeCopy } from "./lib/rules-copy.mjs";
 import { sameCases as sameCasesOf } from "./lib/same-cases.mjs";
+import { formatUnwrittenLine, writeSuiteRecords } from "./lib/suite-records.mjs";
 import { firstRedStep, isTestsStep, stepNamed } from "./lib/steps-run.mjs";
 import { testsStepRun } from "./lib/test-run.mjs";
 import { testedTree } from "./lib/tested-tree.mjs";
 import { borrowInstall, checkouts, worktreeInstall, worktreeRoot } from "./lib/worktree.mjs";
 
 // Red-before and same-cases of the worktree holding `dir`, `args` the command's arguments but --root, each line handed
-// to `say`: a promise of the exit code. A test-file pattern reads as the structure module's file patterns do.
+// to `say`: a promise of the exit code. A test-file pattern reads as the structure module's file patterns do; the
+// edges same-cases' base follows to its suite records are the structure module's reading of structure.json.
 export const redBefore = (dir, args, say) => redBeforeOf({ dir, args, matches: globMatch }, say);
-export const sameCases = (dir, args, say) => sameCasesOf({ dir, args, matches: globMatch }, say);
+export const sameCases = (dir, args, say) => sameCasesOf({ dir, args, matches: globMatch, recordedEdges }, say);
 
 // reader-tests of the worktree holding `dir`, `args` the command's arguments but --root, each line handed to `say`: a
 // promise of the exit code (lib/reader-tests.mjs); READER_TESTS_RUN, its option running the reader tests found. The
@@ -142,13 +146,23 @@ function ranGreen({ main, tree }, say) {
   return Boolean(record);
 }
 
+// The `{tests}` step's run of the project's tests by `tests`, testSetup's (lib/test-run.mjs), each line handed to `say`,
+// a suite record written for each passing test file on the tested tree (lib/suite-records.mjs). `run`: testedRun's.
+async function runTestsRecording(tests, run, say) {
+  const ran = await testsStepRun(tests, say);
+  const unwritten = run.tree ? writeSuiteRecords(run.main, run.tree, { cases: ran.cases, suites: ran.files }) : 0;
+  if (unwritten) say(formatUnwrittenLine(unwritten, "green"));
+  return ran;
+}
+
 // The commands file's steps from the `from`-th (0: every one), a `{tests}` step running the project's tests by `tests`,
-// testSetup's (lib/test-run.mjs), then the structure check: a promise of null when all passed, else the red run to
+// testSetup's (runTestsRecording), then the structure check: a promise of null when all passed, else the red run to
 // record (lib/green-stamp.mjs's redRun): the test files a `{tests}` step failed and the step after it, or the step that
-// went red.
-async function stepsRed({ root, commands, tests }, say, from = 0) {
+// went red. `run`: testedRun's.
+async function stepsRed({ run, commands, tests }, say, from = 0) {
+  const { root } = run;
   const steps = commands.green;
-  const testsStep = tests && ((sayTests) => testsStepRun(tests, sayTests));
+  const testsStep = tests && ((sayTests) => runTestsRecording(tests, run, sayTests));
   const { at, tests: testsRun } = await firstRedStep({ root, steps, testsStep, from }, say);
   if (at < 0) return structurePasses(root, say) ? null : redAtStep("the structure check");
   const failed = isTestsStep(steps[at]) ? (testsRun?.failed ?? []) : [];
@@ -183,7 +197,7 @@ async function rerunGreen(run, inputs, say) {
   const { refusal, red } = rerunnable({ ...run, tests: inputs.tests, recordedEdges });
   if (refusal) { say(`green: ${refusal}`); return 2; }
   const ran = await testsStepRun(inputs.tests, say, red.files);
-  const after = ran.passes && red.next !== null ? await stepsRed({ root: run.root, ...inputs }, say, red.next) : null;
+  const after = ran.passes && red.next !== null ? await stepsRed({ run, ...inputs }, say, red.next) : null;
   if (ran.passes && !after) return stamped(run, say, red);
   const rerun = ran.passes ? { date: now(), failed: after.files, step: after.step } : { date: now(), failed: ran.failed, step: null };
   return recordedRed(run, { ...red, rerun }, { say, unwritten: "its rerun could not be recorded on its red run" });
@@ -211,7 +225,7 @@ export async function green(dir, say, { rerun = false } = {}) {
   const near = run.tree && nearStamp({ root, main: run.main, matches: globMatch }, run.tree, commands.readByNothing);
   if (near) return finished(run, docTestsRed(await docTestsRun({ tests, files: lists.docTests, tree: run.tree, near }, say)), say);
   if (!docTestListsPass({ root, commands, named: lists.named, matches: globMatch }, say)) return 1;
-  return finished(run, await stepsRed({ root, commands, tests }, say), say);
+  return finished(run, await stepsRed({ run, commands, tests }, say), say);
 }
 
 // What a landing on the default branch is held to in the project at the worktree root `root`: null when nothing, the

@@ -18,14 +18,14 @@ function makeTreeRelative(root, file) {
 }
 
 // The testcases of the JUnit file at `results` a run in the tree at `root` wrote, each { suites, name, classname, file,
-// outcome, detail, text, skipReason }, its file from the tree's root; none when it wrote none.
+// time, outcome, detail, text, skipReason }, its file from the tree's root; none when it wrote none.
 export function readResultsCases({ root, results }) {
   const text = readPlainFile(results, RESULTS_CAP);
   if (text === null) return [];
   return junitCases(text).map((raw) => ({ ...raw, file: makeTreeRelative(root, raw.file) }));
 }
 
-// A testcase as a case of its run, in the file and by the id its stack read: { file, id, name, outcome, detail, text,
-// skipReason }, its name its id.
-export const caseFromTestcase = (raw, file, id) =>
-  ({ file, id, name: id, outcome: raw.outcome, detail: raw.detail, text: raw.text, skipReason: raw.skipReason });
+// A testcase as a case of its run, in the file and by the id its stack read: { file, id, name, time, outcome, detail,
+// text, skipReason }, its name its id, `time` its seconds or null.
+export const caseFromTestcase = (raw, file, id) => ({ file, id, name: id, time: raw.time, outcome: raw.outcome,
+  detail: raw.detail, text: raw.text, skipReason: raw.skipReason });
