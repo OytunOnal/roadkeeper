@@ -4,7 +4,8 @@
 //
 // roadHtml(view, sizeStep) draws it. `view` holds the road model (../lib/road-model.mjs, or null with no snapshot), how
 // the tracker was read, the sources read from disk (../lib/page-sources.mjs), the Architecture tab's structure part as the
-// structure module drew it, the project's name and the base of file links; `sizeStep` the attempt's size step.
+// structure module drew it, the project's name, the base of file links and the tracker's issue search
+// (../lib/issue-search.mjs); `sizeStep` the attempt's size step.
 // The page loads two things from outside: the IBM Plex faces from Google Fonts, with a system fallback stack, and the
 // mermaid renderer from cdnjs, only when the host did not draw the diagrams itself.
 //
@@ -18,10 +19,12 @@
 // then ARCHITECTURE.md).
 
 import { functionSources } from "../../_function-sources.mjs";
-import { esc, plural } from "../../_text.mjs";
-import { describeFailure } from "../../_tracker-failure-kinds.mjs";
-import { shownLeadOf } from "../lib/issue-body.mjs";
+import { plural } from "../../_text.mjs";
+import { escapeHtml } from "../../_words.mjs";
+import { describeFailure } from "../../_tracker-words.mjs";
+import { shownLeadOf } from "../lib/shown-summary.mjs";
 import { dayOf } from "../lib/road-model.mjs";
+import { SESSION_START_AGAIN } from "../lib/session-line.mjs";
 import { SET_ASIDE_WORDS } from "../lib/waiting-words.mjs";
 import * as diagramClientFunctions from "./lib/diagram-client.mjs";
 import { inline, markdownSubset } from "./lib/markdown-subset.mjs";
@@ -46,17 +49,17 @@ const FILE_TOKEN = /^(docs\/roadkeeper\/[A-Za-z0-9_./-]+|[A-Za-z0-9_-]+\.(?:md|h
 function srcLink(base, text) {
   const line = String(text == null ? "" : text);
   const m = FILE_TOKEN.exec(line);
-  if (!m) return esc(line);
-  return `<a href="${esc(base + m[1])}">${esc(m[1])}</a>${esc(line.slice(m[1].length))}`;
+  if (!m) return escapeHtml(line);
+  return `<a href="${escapeHtml(base + m[1])}">${escapeHtml(m[1])}</a>${escapeHtml(line.slice(m[1].length))}`;
 }
 
 // What a failed read says, by its kind (describeFailure), as HTML; a kind with no words stops the draw.
-const sayFailure = (kind) => inline(describeFailure(kind));
+const sayFailure = (kind) => inline(describeFailure(kind, { again: SESSION_START_AGAIN }));
 
 // the repository the snapshot `s` names, linked to its issues when its address is known; "the tracker" with none
 function nameRepo(s) {
   if (!(s && s.repo)) return "the tracker";
-  return s.url ? `<a href="${esc(s.url)}/issues" rel="noopener">${esc(s.repo)}</a>` : esc(s.repo);
+  return s.url ? `<a href="${escapeHtml(s.url)}/issues" rel="noopener">${escapeHtml(s.repo)}</a>` : escapeHtml(s.repo);
 }
 
 // Where the page's data came from, said first. `read` is how the tracker was read; `road` null means no snapshot. A
@@ -70,14 +73,14 @@ function trackerLine(read, road) {
   if (read.live) return `<p class="s">Read from ${repo} on ${when}.</p>`;
   if (s && !failed) return `<p class="s">Drawn offline from the snapshot of ${repo}, ${when}.</p>`;
   if (s) return `<p class="unread">The tracker could not be read (${sayFailure(read.failure)}); drawn from the snapshot of ${when}.</p>`;
-  return `<p class="unread">The tracker could not be read${failed ? ` (${sayFailure(read.failure)})` : ""}, and there is no snapshot at ${esc(read.snapshotPath)}: the road is empty.</p>`;
+  return `<p class="unread">The tracker could not be read${failed ? ` (${sayFailure(read.failure)})` : ""}, and there is no snapshot at ${escapeHtml(read.snapshotPath)}: the road is empty.</p>`;
 }
 
 function renderRoad(view, sizeStep) {
   const road = view.road;
   const out = [trackerLine(view.read, road)];
   if (!road) return out.join("\n");
-  out.push(renderKpis(road), renderBar(road), renderFlags(road), renderLegend(),
+  out.push(renderKpis(road, view.issueSearch), renderBar(road, view.issueSearch), renderFlags(road), renderLegend(),
     `<h2>Every issue, by milestone</h2>`, renderGroups(road, sizeStep),
     renderVersionsTable(road), renderBets(road));
   return out.filter(Boolean).join("\n");
@@ -93,10 +96,10 @@ function trackerName(url) {
 
 // What an orange card is, said under the read line while a card of today's is drawn: one waiting past the threshold,
 // `days`.
-const orangeLine = (days) => `<p class="s">An orange card has waited on you for more than ${esc(plural(days, "day"))}.</p>`;
+const orangeLine = (days) => `<p class="s">An orange card has waited on you for more than ${escapeHtml(plural(days, "day"))}.</p>`;
 
 // Where an answer to a card goes, said under the orange line while any card is drawn.
-const answerLine = (url) => `<p class="s">To answer one, click its number to open the issue on ${esc(trackerName(url))}, and write your answer there as a comment.</p>`;
+const answerLine = (url) => `<p class="s">To answer one, click its number to open the issue on ${escapeHtml(trackerName(url))}, and write your answer there as a comment.</p>`;
 
 // The line over the cards set aside, in the read line's look.
 const SET_ASIDE_LINE = `<p class="s">${SET_ASIDE_WORDS[0].toUpperCase()}${SET_ASIDE_WORDS.slice(1)}, so nothing to do yet:</p>`;
@@ -117,19 +120,19 @@ function renderYou(view) {
   if (open.length) out.push(orangeLine(road.waiting.lateAfterDays));
   if (open.length || setAside.length) out.push(answerLine(road.tracker.url));
   // the tab's heading for a screen reader, so its cards' h3 skip no level under the page's h1; the nav shows its name
-  out.push(`<h2 class="unseen">${esc(YOU_TAB.name)}</h2>`);
+  out.push(`<h2 class="unseen">${escapeHtml(YOU_TAB.name)}</h2>`);
   // a card's age: since today, for N days, or, with no day known, that the tracker gave none
   const sayAge = (age) => {
     if (age === null) return `waiting since a day ${trackerName(road.tracker.url)} did not give`;
     return age === 0 ? "waiting since today" : `waiting for ${plural(age, "day")}`;
   };
   // a card of today's, its age under its title; a set-aside card, none
-  const drawTodaysCard = (i) => drawWaitingCard(i, `<p class="s">${esc(sayAge(i.age))}</p>`);
+  const drawTodaysCard = (i) => drawWaitingCard(i, `<p class="s">${escapeHtml(sayAge(i.age))}</p>`);
   const drawSetAsideCard = (i) => drawWaitingCard(i, "");
   if (!open.length) out.push(makeNothingLine(setAside));
   out.push(open.map(drawTodaysCard).join(""));
   if (setAside.length) out.push(SET_ASIDE_LINE, setAside.map(drawSetAsideCard).join(""));
-  if (answered.length) out.push(`<details class="fold"><summary>${plural(answered.length, "answered issue")}</summary><ul>${answered.map((i) => `<li>${issueRef(i)} ${inline(i.title)} <span class="n">${esc(i.closedAt ? `closed on ${longDate(dayOf(i.closedAt))}` : "closed")}</span></li>`).join("")}</ul></details>`);
+  if (answered.length) out.push(`<details class="fold"><summary>${plural(answered.length, "answered issue")}</summary><ul>${answered.map((i) => `<li>${issueRef(i)} ${inline(i.title)} <span class="n">${escapeHtml(i.closedAt ? `closed on ${longDate(dayOf(i.closedAt))}` : "closed")}</span></li>`).join("")}</ul></details>`);
   return out.join("\n");
 }
 
@@ -166,7 +169,7 @@ const pageHead = (name, tokenCss, struct) => [
   `<!doctype html>`,
   `<meta charset="utf-8">`,
   `<meta name="viewport" content="width=device-width, initial-scale=1">`,
-  `<title>${esc(titleOf(name))}</title>`,
+  `<title>${escapeHtml(titleOf(name))}</title>`,
   roadIcon(tokenCss),
   `<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">`,
   `<style>${tokenCss == null ? "" : tokenCss + "\n"}${ROAD_STYLE}${struct ? struct.css : ""}
@@ -183,13 +186,14 @@ function leadOf(onePager) {
 // One tab's link, `count` what waits on it: with something waiting, a badge, and a name saying the count apart from
 // its words.
 const tabLink = ([id, label, count]) => (count
-  ? `<a href="#${id}" aria-label="${esc(label)}, ${count} waiting">${esc(label)}<span class="badge">${count}</span></a>`
-  : `<a href="#${id}">${esc(label)}</a>`);
+  ? `<a href="#${id}" aria-label="${escapeHtml(label)}, ${count} waiting">${escapeHtml(label)}<span class="badge">${count}</span></a>`
+  : `<a href="#${id}">${escapeHtml(label)}</a>`);
 
 // The page. `view`: { road, read: { live, error, failure, snapshotPath }, architecture, onePager, tokens, structure,
-// projectName, linkBase }, where `onePager` is the one-pager's text, null when unread, `tokens` is the token file,
-// { path, css }, `css` null when unread, and `structure` the Architecture tab's part the structure module drew at this
-// size step ({ atop, html, css, js, leftOut }), or null with no structure declared.
+// projectName, linkBase, issueSearch }, where `onePager` is the one-pager's text, null when unread, `tokens` is the
+// token file, { path, css }, `css` null when unread, `structure` the Architecture tab's part the structure module drew
+// at this size step ({ atop, html, css, js, leftOut }), or null with no structure declared, and `issueSearch(filter,
+// sort)` a filter of the road model's as the tracker's search, the address after the repository's.
 // `sizeStep`, the attempt's: { index, past the first said; detail, whether "more" opens an issue's detail }.
 export function roadHtml(view, sizeStep) {
   const name = view.projectName;
@@ -207,8 +211,8 @@ export function roadHtml(view, sizeStep) {
 
   const body = [
     `<div class="wrap" lang="en">`,
-    tokensRead ? "" : `<p class="unread">The design tokens could not be read at ${esc(view.tokens.path)}: the page is drawn without its colours. Reinstall the Roadkeeper plugin.</p>`,
-    `<h1>${esc(titleOf(name))}</h1>`,
+    tokensRead ? "" : `<p class="unread">The design tokens could not be read at ${escapeHtml(view.tokens.path)}: the page is drawn without its colours. Reinstall the Roadkeeper plugin.</p>`,
+    `<h1>${escapeHtml(titleOf(name))}</h1>`,
     leadOf(view.onePager),
     nav,
     `<main id="main">`,

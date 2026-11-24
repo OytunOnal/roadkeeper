@@ -1,6 +1,6 @@
 # Roadkeeper's tools
 
-Read this when setting up Roadkeeper's tools in a project: genesis's walking skeleton, adopt's tour, or the slice a session start asks for. The tools are the green, the merge guard, red-before, same-cases, reader-tests, the check at write, and slice-runs, the retro's table of a slice's runs; each script's header in `${CLAUDE_PLUGIN_ROOT}/scripts/` says its command. All but slice-runs read the project's `docs/roadkeeper/commands.json`; until it exists, the hooks let everything pass.
+Read this when setting up Roadkeeper's tools in a project: genesis's walking skeleton, adopt's tour, or the slice a session start asks for. The tools are the green, the merge guard, red-before, same-cases, reader-tests, the check at write, the test sweep's page, and slice-runs, the retro's table of a slice's runs; each script's header in `${CLAUDE_PLUGIN_ROOT}/scripts/` says its command. All but slice-runs read the project's `docs/roadkeeper/commands.json`; until it exists, the hooks let everything pass.
 
 Take the steps in order.
 
@@ -20,6 +20,7 @@ Take the steps in order.
    - `green`: the steps, run in order from the root; the first red one stops it. A step `["{tests}"]` runs every test file through `runTests`.
    - `tests`: the test files' pattern; the stack's own when left out.
    - `runTests`: one run of named test files writing a per-case report: `{files}` becomes the files, `{out}` the report's path.
+   - `runCases` (optional): `runTests` choosing cases, for the test sweep's runs of one file without some of its cases: `{files}` becomes the file, and an argument holding `{case}` is repeated once per case kept, `{case}` its id as the stack's adapter reads it from the report. Without it, the sweep runs no test file and each card says it was not read for coverage.
    - `beforeTests` (optional): what the tests need built first on an older tree.
    - `lintFile` (optional): the linter on one file, `{file}` its path: the check at write.
    - `suppressionRecords` (optional): suppression records in ESLint's shape (`{ path: { rule: { count } } }`) that ESLint does not find itself, their paths from the root. Beside a refusal, the check at write names a rule past a record's count and rows left under a moved file's old path; it finds ESLint's own record as ESLint does.
@@ -43,7 +44,7 @@ Take the steps in order.
    export default [{ ignores: ["roadkeeper-lint/", ".run/"] }, ...preset({ ceilings })];
    ```
 
-   The preset takes the place of the config's own shape limits. A TypeScript project keeps its parser's config and hands the preset its files: `preset({ ceilings, files: ["src/**/*.ts"] })`; after the preset, it turns ESLint's `no-unused-vars` off and typescript-eslint's `@typescript-eslint/no-unused-vars` on, since the core rule misreads types. The linter joins `green`, and `lintFile` names it. The green turns red while the copy differs from the plugin's, naming this command.
+   The preset takes the place of the config's own shape limits. A TypeScript project keeps its parser's config and hands the preset its files: `preset({ ceilings, files: ["src/**/*.ts"] })`; after the preset, it turns ESLint's `no-unused-vars` off and typescript-eslint's `@typescript-eslint/no-unused-vars` on, since the core rule misreads types. The linter joins `green`, and `lintFile` names it. The green turns red while the copy differs from the plugin's, naming this command. When the copy's last line names `npx eslint --suppress-rule roadkeeper/inner-levels-pure .` (the first copy carrying that rule, which holds kernel, domain and application files pure), run it in the same step: it records the rule's existing breaches in `eslint-suppressions.json`, committed, so nothing goes red.
 
 3. **Ceilings.** Write `docs/roadkeeper/ceilings.json` as `{}` and run the linter over the project (`npx eslint --format json .`). Each file `max-lines` refuses gets a row with the count ESLint names, its path from the config's folder: `{ "src/route.ts": { "lines": 2342 } }`. The file cannot grow past it; once within 400 lines, `roadkeeper/ceiling-paid-off` refuses it until its row goes.
 

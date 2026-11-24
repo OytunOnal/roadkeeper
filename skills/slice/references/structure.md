@@ -2,7 +2,7 @@
 
 How a project's modules are laid out, checked and planned. Uses the vocabulary of `codebase-design` (interface, depth, seam, adapter), Module, Deep module, Entry and Mixed levels from `${CLAUDE_PLUGIN_ROOT}/GLOSSARY.md`, plus one word:
 
-- **Level**: a ring of the dependency rule. Inner levels hold policy; outer levels touch input and output.
+- **Level**: a ring of the dependency rule, placed by what its files know (`## Levels`).
 
 ## The shape
 
@@ -12,7 +12,7 @@ How a project's modules are laid out, checked and planned. Uses the vocabulary o
 - A tag is its file's first comment; an Astro file's tag opens its frontmatter; a Python file's is `# @level domain`, after any shebang and encoding line.
 - Seen from outside, a deep module has its entry's level: the outermost level the entry wires.
 - A private file names its own level.
-- A file takes its job's level. One whose code holds two levels names both, `// @level application infrastructure`: mixed levels, debt under an exception until it is split.
+- A file takes the level whose `## Levels` definition fits what its code does; an edge that then points outward is written as an exception or debt, never fixed by re-tagging. A rule's or a use case's own fault line stays with it; presentation holds the files whose job is wording. One whose code holds two levels names both, `// @level application infrastructure`: mixed levels, debt under an exception until it is split.
 
 ## docs/roadkeeper/dependency-rules.md
 
@@ -29,18 +29,19 @@ Copy this into the project, and keep its comments.
 - `src/gateways/*`
 
 ## Levels
-<!-- innermost first; changing them takes an ADR -->
-1. domain — business rules and pure computation; no disk, clock, network or process
-2. application — use cases, and the ports outer levels implement
-3. infrastructure | presentation — adapters at the ports (a database gateway, an HTTP client), and the UI, CLI or HTTP handlers; same ring
-4. main — wiring that builds the adapters and hands them to the application, and a deep module's entry that wires its levels; dropped when nothing wires
+<!-- innermost first; changing them takes an ADR; kernel, domain and application: no disk, clock, network or process -->
+1. kernel — generic computation that knows nothing of the project (text, paths, dates); anyone depends on it, as on the language's own library
+2. domain — the project's concepts and rules
+3. application — the use cases, and the ports outer levels implement
+4. infrastructure | presentation — infrastructure, the adapters at the ports (a database gateway, an HTTP client, the disk, a process) and another program's formats (its command lines, its output, its files); presentation, the UI, CLI or HTTP handlers and the words and pages a person reads; same ring
+5. main — wiring that builds the adapters and hands them to the application, and a deep module's entry that wires its levels; dropped when nothing wires
 
 ## Rules
 <!-- for the reader; the check does not read this section -->
 - Dependencies point inward: a file depends on its own level or an inner one. A file of mixed levels counts as its outermost.
 - Two levels on the same ring never depend on each other.
 - A file names one level; a deep module may hold several.
-- Code reaches a deep module only through its entry; what is inside it, inner modules too, is private. A test past the entry is a judgement the review weighs.
+- Code reaches a deep module only through its entry, a test too; what is inside it, inner modules too, is private.
 - Deep modules nested in one parent, and top deep modules, never depend on each other in a cycle.
 - An exception never hides a cycle.
 
@@ -75,10 +76,10 @@ Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/structure-check.mjs` in the project root
 - a deep module with more than one source file at its root;
 - a file of mixed levels;
 - a dependency that points outward;
-- an import into a deep module past its entry;
-- a test past a deep module's entry, a judgement: printed, and the check still passes;
+- an import into a deep module past its entry, a test's too;
 - a cycle between modules;
 - a level named like a module's folder;
+- a kernel, domain or application Python file importing anything but the project's own modules and the standard modules that do no I/O, or calling the clock or the built-in `open` (`inner-levels-pure`; a module the project holds is its own, even when it shadows a standard one's name): the files breaking it when the structure command first wrote `impureBaseline` sit in its `impureBaseline`, shown as debt until fixed, and a fixed file leaves it;
 - debt still covered by exceptions;
 - a `structure.json` older than the code.
 

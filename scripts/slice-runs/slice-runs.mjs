@@ -1,17 +1,30 @@
-// @level infrastructure
+// @level main
 // Roadkeeper — the retro's table of a slice's runs: the transcripts Claude Code keeps for the project, cut to the
 // slice window, one row a run holding a message or a call in it.
 
+import { openTrackerRead } from "../_tracker.mjs";
 import { readSlowestInOutputFile } from "./lib/green-output.mjs";
 import { findGreens } from "./lib/green-runs.mjs";
 import { countHooksAndErrors } from "./lib/hook-and-error-counts.mjs";
-import { countAgentWaits, countRun, countWaits, isMessageOrCall } from "./lib/run-counts.mjs";
+import { countAgentWaits, countRun, countWaits } from "./lib/run-counts.mjs";
 import { formatRunsTable } from "./lib/runs-table.mjs";
 import { findTestRuns } from "./lib/test-runs.mjs";
+import { readTimelines } from "./lib/read-timelines.mjs";
+import { readEntryFacts } from "./lib/read-entry-facts.mjs";
 import { findTranscriptFolder, listTranscripts, nameRun, readLastWritten } from "./lib/transcript-folder.mjs";
+import { buildReadFailureLine } from "./lib/build-read-failure-line.mjs";
 import { LINE_BYTES_CAP, readEntriesIn } from "./lib/transcript-lines.mjs";
+import { readSliceWindowFrom } from "./lib/window-read.mjs";
 
-export { readSliceWindow } from "./lib/window-read.mjs";
+// The slice window of `spec` at `root`'s tracker, ending at `now` when no other issue is labelled after it:
+// { window: { from, to, said } } or { refused }, a failed read said as a refusal.
+export function readSliceWindow(root, spec, now) {
+  try {
+    return readSliceWindowFrom((budget) => readTimelines(openTrackerRead(root, budget)), spec, now);
+  } catch (e) {
+    return { refused: buildReadFailureLine(e) };
+  }
+}
 
 const MAX_TRANSCRIPTS = 5000; // transcripts read: Roadkeeper's own folder held 2,087 on 2026-11-19
 
@@ -34,9 +47,11 @@ const readGreens = (entries) => findGreens(entries)
   .map((green) => (green.outputFile === null ? green : { ...green, slowest: readSlowestInOutputFile(green.outputFile) }));
 
 // a transcript's row, or null when its window holds no message or call: its counts, its waits, its test runs by
-// `testCommand` (test-runs.mjs's), and whether its description file could not be read
-function buildRun(transcript, entries, testCommand) {
-  if (!entries.some(({ entry }) => isMessageOrCall(entry))) return null;
+// `testCommand` (test-runs.mjs's), and whether its description file could not be read; its entries read as the counts
+// take them (read-entry-facts.mjs)
+function buildRun(transcript, timedEntries, testCommand) {
+  const entries = readEntryFacts(timedEntries);
+  if (!entries.some((facts) => facts.isMessageOrCall)) return null;
   const waits = transcript.isSession ? countWaits(entries) : countAgentWaits(entries);
   const { name, isUnreadable } = nameRun(transcript);
   return { name, path: transcript.path, ...countRun(entries), ...countHooksAndErrors(entries), greens: readGreens(entries), waits,

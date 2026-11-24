@@ -1,6 +1,6 @@
 // @level domain
 // Roadkeeper — the lines the green's `{tests}` step prints naming its slowest test files: written by
-// scripts/project-tools/lib/test-run.mjs, read back from a green's output by scripts/slice-runs/lib/green-runs.mjs.
+// scripts/project-tools/lib/test-run-lines.mjs, read back from a green's output by scripts/slice-runs/lib/green-runs.mjs.
 
 import { plural } from "./_text.mjs";
 

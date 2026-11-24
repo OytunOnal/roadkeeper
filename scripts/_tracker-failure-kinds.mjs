@@ -1,7 +1,6 @@
-// @level domain
-// Roadkeeper — the kinds of a failed tracker read: the tracker names one (scripts/_tracker.mjs, classifyFailure); each
-// is said in the same plain words wherever it is said (describeFailure), The Road's page (scripts/road/page/page.mjs)
-// among them.
+// @level application
+// Roadkeeper — the kinds of a failed tracker read, the tracker port's outcomes: the tracker names one
+// (scripts/_tracker.mjs, classifyFailure); their words are scripts/_tracker-words.mjs's.
 
 // each kind by its name, one string the tracker writes and the page reads
 export const FAILURE_KIND = Object.freeze({
@@ -13,22 +12,8 @@ export const FAILURE_KIND = Object.freeze({
   other: "other",               // any other failure
   incompleteIssues: "incomplete-issues",         // GitHub's list of issues ended short of an issue `gh issue list` gave
   incompleteMilestones: "incomplete-milestones", // GitHub's list of milestones lacks a milestone an issue names
+  notFound: "not-found",        // GitHub's 404 for a read naming one issue (scripts/_tracker.mjs, openTrackerRead)
 });
 
-// What a failed read says, by its kind, a command in backticks; no text of `gh`'s.
-const FAILURE_WORDS = new Map([
-  [FAILURE_KIND.noAnswer, "GitHub did not answer"],
-  [FAILURE_KIND.outOfTime, "the read ran out of time"],
-  [FAILURE_KIND.notSignedIn, "gh is not signed in to GitHub: run `gh auth login`"],
-  [FAILURE_KIND.ghMissing, "gh is not installed"],
-  [FAILURE_KIND.rateLimited, "GitHub is limiting reads for now: it passes within the hour"],
-  [FAILURE_KIND.other, "GitHub refused the read"],
-  [FAILURE_KIND.incompleteIssues, "GitHub's list of issues came back incomplete"],
-  [FAILURE_KIND.incompleteMilestones, "GitHub's list of milestones came back incomplete"],
-]);
-
-// The words of a failed read's kind; a kind with no words is a state the tracker never gives, and throws.
-export function describeFailure(kind) {
-  if (!FAILURE_WORDS.has(kind)) throw new Error(`no words for the failed read's kind: ${kind}`);
-  return FAILURE_WORDS.get(kind);
-}
+// whether `kind` is one of FAILURE_KIND's
+export const isFailureKind = (kind) => Object.values(FAILURE_KIND).includes(kind);

@@ -1,6 +1,7 @@
 // @level main
 // Roadkeeper — the project tools' entry, their one interface: a project's commands file, the green run from it, the
-// project's copy of the plugin's lint rules, its tests run by name: red-before and same-cases, a change's reader tests,
+// project's copy of the plugin's lint rules, its tests run by name: red-before, same-cases and the test sweep's runs of
+// one file, whole or keeping some cases, a change's reader tests,
 // whether a commit may land, the check at write, a written file judged by the project's linter, and the borrowed
 // install, the main checkout's linked into a linked worktree (borrow-install and the structure command). It wires the
 // commands file's reader, the worktree and its install, the tested tree, the green stamp and the stamped tree near a
@@ -27,61 +28,119 @@ import { join } from "node:path";
 import { todayLocal } from "../_clock.mjs";
 import { shortHash } from "../_git.mjs";
 import { recordsDir } from "../_files.mjs";
+import { branches } from "../_hook.mjs";
 import { readTracker } from "../_tracker.mjs";
 import { globMatch, recordedEdges, report } from "../structure/structure.mjs";
-import { COMMANDS_FILE, namesDocTest, readCommands } from "./lib/commands-file.mjs";
+import { counted, differenceLines, listedByFile } from "./lib/case-outcome-lines.mjs";
+import { COMMANDS_FILE, isTestsStep, namesDocTest } from "./lib/commands-fields.mjs";
+import { readCommands } from "./lib/commands-file.mjs";
+import {
+  commitFiles, fileName, heldByCommit, inCommitTree, inLastCommit, namedCommit, onDisk, pathInside, treeOf,
+  uncommittedFiles, workingFile, workingFiles,
+} from "./lib/commit-tree.mjs";
 import { docTestListsPass, docTestLists, docTestsRun, greenInputs } from "./lib/green-doc-tests.mjs";
-import { rerunStampedLine, rerunnable } from "./lib/green-rerun.mjs";
+import { rerunnableRedRun } from "./lib/green-rerun.mjs";
 import { redAtStep, redOnTests, redRun, stampedRecord, writeRedRun, writeStamp } from "./lib/green-stamp.mjs";
-import { OWN_STAMP_ONLY, RUN_GREEN, landingRefusal as landingRefusalOf } from "./lib/landing.mjs";
-import { nearStamp } from "./lib/near-stamp.mjs";
+import { landingRefusal as landingRefusalOf } from "./lib/landing.mjs";
+import { RUN_GREEN, mergeBase, remoteHolds, remoteHome } from "./lib/landing-asks.mjs";
+import { OWN_STAMP_ONLY } from "./lib/landing-state.mjs";
+import { changedFiles, nearStamp } from "./lib/near-stamp.mjs";
+import { changeReaders, readerScan, readersThrough } from "./lib/reader-scan.mjs";
 import { readerTests as readerTestsOf } from "./lib/reader-tests.mjs";
 import { now } from "./lib/record-folder.mjs";
 import { redBefore as redBeforeOf } from "./lib/red-before.mjs";
-import { RULES_COPY, writeCopy } from "./lib/rules-copy.mjs";
+import { rerunStampedLine } from "./lib/rerun-rule.mjs";
+import { COPY_COMMAND, RULES_COPY, SUPPRESS_PURE_STEP, copyDiffers, writeCopy } from "./lib/rules-copy.mjs";
 import { sameCases as sameCasesOf } from "./lib/same-cases.mjs";
-import { formatUnwrittenLine, writeSuiteRecords } from "./lib/suite-records.mjs";
-import { firstRedStep, isTestsStep, stepNamed } from "./lib/steps-run.mjs";
-import { testsStepRun } from "./lib/test-run.mjs";
+import {
+  findRecordsRefusal, formatUnwrittenLine, listRecordedTrees, readSuiteRecord, writeSuiteRecords,
+} from "./lib/suite-records.mjs";
+import { failLines, passLine, stepNamed } from "./lib/step-lines.mjs";
+import { firstRedStep } from "./lib/steps-run.mjs";
+import { slowestLines, totalLine } from "./lib/test-run-lines.mjs";
+import { isPathFromRoot } from "./lib/json-shapes.mjs";
+import {
+  inPool, namedFilesSplit, projectCodeFile, runBeforeTests, runFileKeeping, runFileWhole, testFileMatcher, testSetup,
+  testsStepRun, treeCases, worktreeRunLists, worktreeTests,
+} from "./lib/test-run.mjs";
 import { testedTree } from "./lib/tested-tree.mjs";
 import { borrowInstall, checkouts, worktreeInstall, worktreeRoot } from "./lib/worktree.mjs";
 
+// The lines the runs say, handed to each run (lib/test-run.mjs's testSetup, lib/steps-run.mjs's firstRedStep): the
+// cases' (lib/case-outcome-lines.mjs), the steps' (lib/step-lines.mjs) and the `{tests}` step's (lib/test-run-lines.mjs).
+const RUN_WORDS = Object.freeze({ counted, differenceLines, listedByFile, passLine, failLines, totalLine, slowestLines });
+
+// The adapters the use cases call, handed to each as one object (lib/red-before.mjs, lib/same-cases.mjs,
+// lib/recorded-base.mjs, lib/reader-tests.mjs, lib/green-doc-tests.mjs, lib/landing.mjs, lib/green-rerun.mjs): git and
+// the commit tree's files (lib/commit-tree.mjs, lib/near-stamp.mjs, lib/tested-tree.mjs, lib/worktree.mjs), the remote's
+// default branch (lib/landing-asks.mjs), the disk's paths, the commands file and the rules' copy, the green stamp, the
+// tests' runs (lib/test-run.mjs), the reader scan and the suite records.
+const ADAPTERS = Object.freeze({
+  shortHash, treeOf, commitFiles, fileName, heldByCommit, inCommitTree, inLastCommit, namedCommit, onDisk, pathInside,
+  uncommittedFiles, workingFile, workingFiles, changedFiles, nearStamp, testedTree, checkouts, pathJoin: join,
+  branches, remoteHome, remoteHolds, mergeBase, redRun, stampedRecord,
+  readCommands, COPY_COMMAND, RULES_COPY, copyDiffers,
+  namedFilesSplit, testFileMatcher, testSetup, testsStepRun, treeCases, worktreeRunLists, worktreeTests,
+  changeReaders, readerScan, readersThrough,
+  findRecordsRefusal, formatUnwrittenLine, listRecordedTrees, readSuiteRecord, writeSuiteRecords,
+});
+
+// What each use case is handed: the structure module's file patterns and edges, the runs' words and the adapters.
+const USE_CASE_BUNDLE = Object.freeze({ matches: globMatch, recordedEdges, words: RUN_WORDS, adapters: ADAPTERS });
+
 // Red-before and same-cases of the worktree holding `dir`, `args` the command's arguments but --root, each line handed
 // to `say`: a promise of the exit code. A test-file pattern reads as the structure module's file patterns do; the
-// edges same-cases' base follows to its suite records are the structure module's reading of structure.json.
-export const redBefore = (dir, args, say) => redBeforeOf({ dir, args, matches: globMatch }, say);
-export const sameCases = (dir, args, say) => sameCasesOf({ dir, args, matches: globMatch, recordedEdges }, say);
+// edges red-before carries the named suites' test helpers through, and same-cases' base follows to its suite records,
+// are the structure module's reading of structure.json.
+export const redBefore = (dir, args, say) => redBeforeOf({ dir, args, ...USE_CASE_BUNDLE }, say);
+export const sameCases = (dir, args, say) => sameCasesOf({ dir, args, ...USE_CASE_BUNDLE }, say);
 
 // reader-tests of the worktree holding `dir`, `args` the command's arguments but --root, each line handed to `say`: a
 // promise of the exit code (lib/reader-tests.mjs); READER_TESTS_RUN, its option running the reader tests found. The
 // edges it follows are the structure module's reading of structure.json.
-export const readerTests = (dir, args, say) => readerTestsOf({ dir, args, matches: globMatch, recordedEdges }, say);
+export const readerTests = (dir, args, say) => readerTestsOf({ dir, args, ...USE_CASE_BUNDLE }, say);
 export { RUN as READER_TESTS_RUN } from "./lib/reader-tests.mjs";
+
+// The test sweep's runs of one test file at a time in the worktree holding `dir` (lib/test-run.mjs): { root,
+// patternsLine, noInstallLine, selectsCases, isTestFile, codeFile, runBefore, runWhole, runKeeping }, `noInstallLine`
+// the line saying why no install is linked or null, `selectsCases` whether the commands file names `runCases`,
+// `isTestFile(path)` whether a path from the root stays inside it and matches the test files' patterns,
+// `codeFile(absolutePath)` its path from the root when it is the project's code, else null, `testFiles()` every test
+// file of the worktree by its path from the root, `runBefore(say)` beforeTests' steps run, `runWhole(run)` a file run
+// by runTests, `runKeeping(run)` by runCases with the cases `run.keep` names, `runSideBySide(tasks)` each task run, one
+// per processor at a time, a promise of their results in the tasks' order; or { refused }, the line saying why not.
+export function testFileRuns(dir) {
+  const setup = testSetup({ dir, matches: globMatch, words: RUN_WORDS });
+  if (setup.refused) return { refused: setup.refused };
+  const { root, commands, said, patternsLine, isTest } = setup;
+  return { root, patternsLine, noInstallLine: said, selectsCases: Boolean(commands.runCases),
+    isTestFile: (path) => isPathFromRoot(path) && isTest(path), codeFile: projectCodeFile(setup),
+    testFiles: () => worktreeTests(setup), runBefore: (say) => runBeforeTests(setup, say),
+    runWhole: (run) => runFileWhole(setup, run), runKeeping: (run) => runFileKeeping(setup, run), runSideBySide: inPool };
+}
 
 // The remote-tracking ref of a remote's default branch in the worktree at `root`, `remoteHome(root, remote, home)`: ""
 // when the remote's name can hold none or the clone holds none.
-export { remoteHome } from "./lib/landing.mjs";
+export { remoteHome } from "./lib/landing-asks.mjs";
 
-// The check at write's judgement of the file just written at `file`, an absolute path, by its project's `lintFile`,
-// `writtenFileBreaches(file, project)`: only inside the session's project, the clone holding the folder `project`; a
-// promise of { lines }, the refusal's lines, none when it passes or is not judged; a refusal's with { path,
-// holdingRecords, pastCounts, movedRows } beside them, the file's path as shown and what the project's suppression
-// records say of it: the records holding rows for it, a rule past the count a record allows and records holding a moved
-// file's rows; with { cause, why } when
-// the adapter names a cause, none read or ESLint's own sentence beside them, and how the run ended; { said }, the line
-// saying where a linked worktree's install comes from (lib/written-file-lint.mjs).
-export { writtenFileBreaches } from "./lib/written-file-lint.mjs";
-// The causes the judgement names (adapters/adapters.mjs), each by its name: { failed, unread, overCounted, eslintStopped }.
-export { CAUSES } from "./adapters/adapters.mjs";
+// The check at write's refusal of the file just written at `file`, an absolute path, judged by its project's
+// `lintFile`, `writtenFileRefusal(file, project)`: only inside the session's project, the clone holding the folder
+// `project`; a promise of the refusal's lines, each whole as the hook says it, none when the file passes or is not
+// judged: the breaches' lines, the line of a cause the adapter names, what the project's suppression records say of the
+// file, or the line saying where a linked worktree's install comes from (written-file-lint/written-file-lint.mjs);
+// CHECK_AT_WRITE_HOOK, the hook's name its lines start with.
+export { HOOK as CHECK_AT_WRITE_HOOK, writtenFileRefusal } from "./written-file-lint/written-file-lint.mjs";
 
 // The plugin's lint rules copied into the project of the worktree holding `dir`, its RULES_COPY folder replaced whole,
-// each line handed to `say`: its exit code, 0 copied, 2 refused with nothing written.
+// each line handed to `say`, the first copy carrying the inner levels' rule ending on the step that records its
+// existing breaches: its exit code, 0 copied, 2 refused with nothing written.
 export function copyLintRules(dir, say) {
   const root = worktreeRoot(dir);
   if (!root) { say("copy-lint-rules: not in a git repository"); return 2; }
   if (!recordsDir(root)) { say("copy-lint-rules: docs/roadkeeper is missing or a link: not a Roadkeeper project"); return 2; }
-  const { count, refused } = writeCopy(root);
+  const { count, firstPure, refused } = writeCopy(root);
   say(refused ? `copy-lint-rules: ${refused}` : `copy-lint-rules: ${count} files copied into ${RULES_COPY}/`);
+  if (firstPure) say(`copy-lint-rules: roadkeeper/inner-levels-pure is new in this copy; record its existing breaches: ${SUPPRESS_PURE_STEP}`);
   return refused ? 2 : 0;
 }
 
@@ -126,7 +185,7 @@ function stamped(run, say, red) {
   if (tree && testedTree(root, install) !== tree) { say("green: red, the steps changed the tree"); return 1; }
   const written = tree && !configOverridden() && writeStamp(main, tree, red && { redDate: red.date, files: red.files });
   if (!written) say("green: green, no stamp written");
-  else say(red ? rerunStampedLine(tree, red) : `green: stamped ${shortHash(tree)}`);
+  else say(red ? rerunStampedLine(shortHash(tree), red) : `green: stamped ${shortHash(tree)}`);
   return 0;
 }
 
@@ -163,7 +222,7 @@ async function stepsRed({ run, commands, tests }, say, from = 0) {
   const { root } = run;
   const steps = commands.green;
   const testsStep = tests && ((sayTests) => runTestsRecording(tests, run, sayTests));
-  const { at, tests: testsRun } = await firstRedStep({ root, steps, testsStep, from }, say);
+  const { at, tests: testsRun } = await firstRedStep({ root, steps, testsStep, from, words: RUN_WORDS }, say);
   if (at < 0) return structurePasses(root, say) ? null : redAtStep("the structure check");
   const failed = isTestsStep(steps[at]) ? (testsRun?.failed ?? []) : [];
   return failed.length ? redOnTests(failed, at + 1) : redAtStep(stepNamed(steps, at));
@@ -194,7 +253,7 @@ function finished(run, red, say) {
 // files run alone, then the steps the red never reached and the structure check, the tree stamped when all pass (exit
 // 0), else red (exit 1), the rerun recorded on the red run. `inputs`: greenInputs' { commands, tests }.
 async function rerunGreen(run, inputs, say) {
-  const { refusal, red } = rerunnable({ ...run, tests: inputs.tests, recordedEdges });
+  const { refusal, red } = rerunnableRedRun({ ...run, tests: inputs.tests, recordedEdges, adapters: ADAPTERS });
   if (refusal) { say(`green: ${refusal}`); return 2; }
   const ran = await testsStepRun(inputs.tests, say, red.files);
   const after = ran.passes && red.next !== null ? await stepsRed({ run, ...inputs }, say, red.next) : null;
@@ -215,26 +274,40 @@ async function rerunGreen(run, inputs, say) {
 export async function green(dir, say, { rerun = false } = {}) {
   const root = worktreeRoot(dir);
   if (!root) { say("green: not in a git repository"); return 2; }
-  const { code, commands, tests } = greenInputs({ root, matches: globMatch }, say);
+  const { code, commands, tests } = greenInputs({ root, ...USE_CASE_BUNDLE }, say);
   if (code !== undefined) return code;
   const run = testedRun(root, commands.install, say);
   if (ranGreen(run, say)) return 0;
-  const lists = docTestLists(root, commands);
+  const lists = docTestLists({ root, adapters: ADAPTERS }, commands);
   if (lists.missing) { say(`green: red, ${lists.missing}`); return 1; }
   if (rerun) return rerunGreen(run, { commands, tests }, say);
   const near = run.tree && nearStamp({ root, main: run.main, matches: globMatch }, run.tree, commands.readByNothing);
-  if (near) return finished(run, docTestsRed(await docTestsRun({ tests, files: lists.docTests, tree: run.tree, near }, say)), say);
-  if (!docTestListsPass({ root, commands, named: lists.named, matches: globMatch }, say)) return 1;
+  const docTests = { tests, files: lists.docTests, tree: run.tree, near, adapters: ADAPTERS };
+  if (near) return finished(run, docTestsRed(await docTestsRun(docTests, say)), say);
+  if (!docTestListsPass({ root, commands, named: lists.named, ...USE_CASE_BUNDLE }, say)) return 1;
   return finished(run, await stepsRed({ run, commands, tests }, say), say);
+}
+
+// whether nothing is at the commands file's path under `root`: a link or another error there reads as the reader's refusal
+const hasNoCommandsFile = (root) => {
+  try { lstatSync(join(root, ...COMMANDS_FILE.split("/"))); return false; } catch (e) { return e.code === "ENOENT"; }
+};
+
+// The install folder the commands file of the project at `root` names, its path from the root, the stack's when it
+// names none: { install }, null when the project holds no commands file or its stack has no install; or { refused },
+// the commands file's reader's line.
+export function readNamedInstall(root) {
+  if (hasNoCommandsFile(root)) return { install: null };
+  const { commands, refused } = readCommands(root);
+  return refused ? { refused } : { install: commands.install };
 }
 
 // What a landing on the default branch is held to in the project at the worktree root `root`: null when nothing, the
 // root holding no Roadkeeper docs folder or no commands file; else { patterns }, the commands file's readByNothing,
-// OWN_STAMP_ONLY (lib/landing.mjs) where it names a doc test, whose green runs them and stamps the tree; or
+// OWN_STAMP_ONLY (lib/landing-state.mjs) where it names a doc test, whose green runs them and stamps the tree; or
 // { refusal }, the line saying why the commands file cannot be read and naming the green.
 export function landingRules(root) {
-  if (!recordsDir(root)) return null;
-  try { lstatSync(join(root, ...COMMANDS_FILE.split("/"))); } catch (e) { if (e.code === "ENOENT") return null; }
+  if (!recordsDir(root) || hasNoCommandsFile(root)) return null;
   const { commands, refused } = readCommands(root);
   if (refused) return { refusal: `${refused}; fix it, then ${RUN_GREEN}` };
   return { patterns: namesDocTest(commands) ? OWN_STAMP_ONLY : commands.readByNothing };
@@ -245,6 +318,6 @@ export function landingRules(root) {
 // says, already holds it, its tree holds the green stamp, or it differs from a stamped tree only in files `patterns`
 // names (OWN_STAMP_ONLY: none), the green's own inputs never among them. `landing`: { remote, home, commits,
 // patterns }, the remote they land on and its default branch. A pattern reads as the structure module's file patterns
-// do. Only reads: git and the green stamp.
+// do. Only reads: git and the green stamp (lib/landing.mjs, handed its adapters and the line a refusal ends on).
 export const landingRefusal = (root, landing) =>
-  landingRefusalOf({ root, main: checkouts(root).main, matches: globMatch }, landing);
+  landingRefusalOf({ root, main: checkouts(root).main, ...USE_CASE_BUNDLE, runGreen: RUN_GREEN }, landing);

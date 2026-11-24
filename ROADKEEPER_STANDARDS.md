@@ -35,6 +35,7 @@ Every rule here is a default. A rule that opens with a condition ("with a databa
 - Replaced code is deleted, never commented out; its callers move in the same change. No compatibility shims, no `// removed` comments.
 - A case for new behaviour, a bug fix's included, fails before its code; a guard case, which the code already holds, is exempt.
 - A refactor and a change of behaviour are separate changes.
+- A file a change touches leaves that change with no suppression or ceiling row: each suppressed breach fixed, and a file past the size limits brought under them.
 - Counted duplication is a finding, named with its count and its places, never a judgement call.
 
 ### Names
@@ -50,12 +51,13 @@ Changed code is held to these; case conventions stay the project's.
 
 ## Tests
 
-<!-- The guard case before a change follows Michael Feathers's Working Effectively with Legacy Code; no text is copied. -->
+<!-- The case at its seam follows Matt Pocock's tdd skill (tests.md), the guard case before a change Michael Feathers's Working Effectively with Legacy Code; no text is copied. -->
 
+- A case asserts what a caller of its seam meets, through the seam's entry, against a value known apart from the code; one repeating another's behaviour at the same seam, reaching past the entry, or checking an edge off the critical path is a finding.
 - A test waits on an event, never on a sleep. A time limit, a test's or a tool's, is set from the work it bounds: for work that grows with its input, a floor plus an allowance per item; a fixed number of seconds only for work of a fixed size, or under a limit its caller sets (a hook's). A test's comes from the same work at a smaller size in the same run, or the time the work itself is made to take.
 - A fixture standing for a repository file copies that file, never retypes it. A regenerated fixture records why.
 - A test asserts a decision, not content: a check keyed to a substring, a word count or a sentence's shape is a finding unless the contract declares that set and the test names it.
-- No source-grep: a test reads output or runs the code. Two precedents are read from their files: a sweep proving a retired name gone, and a file no test can run (a CI workflow).
+- No source-grep: a test reads output or runs the code. Two precedents are read from their files: a scan proving a retired name gone, and a file no test can run (a CI workflow).
 - A test that pins a date, a version or a count says why when it moves.
 - No check that content can silence, and none that demands content.
 - A test decides its pass on a state it writes itself, never on one a scheduled run rewrites.
@@ -84,3 +86,4 @@ Changed code is held to these; case conventions stay the project's.
 
 - Text an agent reads (a skill, a brief, a code comment, a message) is written and reviewed by the `writing-for-agents` skill: call the Skill tool with it.
 - Words a page shows a person say what to do, in order: one verb per action, the place and tool named, each pronoun pointing at one thing, read once as a stranger.
+- A tool's message about a fault says, in its first line, the step that fixes it, naming the command to run or the file to change; what it found follows, and a fault it cannot name a step for says whose step it is.

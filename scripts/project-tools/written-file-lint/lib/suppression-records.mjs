@@ -13,8 +13,8 @@
 // the written file's path is shown.
 
 import { join, resolve } from "node:path";
-import { insideRoot, lexists, noLinkOnTheWay, pathFrom, readPlainFile } from "../../_files.mjs";
-import { isObject, isPathFromRoot } from "./json-shapes.mjs";
+import { insideRoot, lexists, noLinkOnTheWay, pathFrom, readPlainFile } from "../../../_files.mjs";
+import { isObject, isPathFromRoot } from "../../lib/json-shapes.mjs";
 
 const DEFAULT_RECORD = "eslint-suppressions.json"; // ESLint's own record, at the root it runs from
 const LOCATION_OPTION = "--suppressions-location"; // lintFile's option naming ESLint's record

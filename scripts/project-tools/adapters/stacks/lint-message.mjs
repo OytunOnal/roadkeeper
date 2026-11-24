@@ -1,9 +1,9 @@
-// @level domain
+// @level infrastructure
 // Roadkeeper — what the adapters read from a linter's output for the check at write: whether a finding's rule is an
 // unused-name rule, left to the commit; and ESLint's own sentences, which both stacks read, Roadkeeper's check passing
 // ESLint's lines through: its unused-suppressions sentence (eslint/lib/cli.js) and its fatal line (eslint/bin/eslint.js),
-// each read only as a line of its own, never inside a report's line; and the read both adapters give back from what they
-// found. The numbers ESLint's limit rules state are ../../../_eslint-numbers.mjs's.
+// each read only as a line of its own, never inside a report's line; the mark of a breach that is a syntax error; and
+// the read both adapters give back from what they found. The numbers ESLint's limit rules state are ../../../_eslint-numbers.mjs's.
 
 // an unused-name rule's name, after any plugin's prefix: a name is often written one edit before its first use. ESLint's
 // own and its plugins'; pyflakes' codes, as ruff and flake8 print them; pylint's
@@ -30,6 +30,10 @@ export function readEslintCause(output) {
   const lines = output.split(/\r\n?|\n/);
   return ESLINT_SENTENCES.find(([sentence]) => lines.some((l) => sentence.test(l)))?.[1] ?? null;
 }
+
+// A breach marked as a syntax error, `syntaxError`: the file does not parse, said by the check at write in place of a
+// breach line.
+export const markSyntaxError = (breach) => ({ ...breach, syntaxError: true });
 
 // A lint run's read from what its adapter found: `breaches`, kept of `found` findings (unused names among them), and
 // `cause`, ESLint's own sentence's or null. { breaches } with the cause beside them, the cause alone when there is no

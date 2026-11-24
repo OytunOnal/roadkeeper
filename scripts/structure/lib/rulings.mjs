@@ -6,7 +6,8 @@
 //
 // The rules: skills/slice/references/structure.md: The shape, the template's Rules, Known debt.
 
-import { MAX_DEPTH, SOURCE, globMatch, isCodeEdge, pathAndParents, underPath } from "./source-paths.mjs";
+import { MAX_DEPTH, globMatch, pathAndParents, underPath } from "./path-match.mjs";
+import { SOURCE, isCodeEdge } from "./source-paths.mjs";
 import { closedVersions, reviewPointDue } from "./review-points.mjs";
 import { outward, placed } from "./structure-model.mjs";
 import { moduleRecords } from "./module-records.mjs";
@@ -21,14 +22,14 @@ const MAX_CYCLE_MODULES = 20;
 // the two-way pairs listed under a group, where a fix starts; past it they are counted
 const MAX_CYCLE_PAIRS = 20;
 
-// the grade each kind is filed at: a test past the interface and a cycle are judgements
+// the grade each kind is filed at: a level named like a folder and a cycle are judgements
 export const KINDS = {
   "no-level": "hard",
   "root-files": "hard",
   "mixed-levels": "hard",
   "outward": "hard",
   "past-entry": "hard",
-  "test-past-interface": "judgement",
+  "test-past-entry": "hard",
   "level-name": "judgement",
   "cycle": "judgement",
 };
@@ -84,25 +85,44 @@ const edgeKey = (e) => `${e.from}\n${e.to}\n${e.kind}`;
 // - modules: each module's record (module-records.mjs, moduleRecords);
 // - the cycles, and what was not read past the caps.
 export function rulings(sm, judging = judgingOptions()) {
-  const isDue = dueRule(judging.today, judging.closedVersions);
-  const byPath = new Map(sm.modules.map((m) => [m.path, m]));
   const exceptions = sm.exceptions.slice(0, MAX_EXCEPTIONS), isTest = testOf(sm.tests);
-  // the modules holding a module's files, itself first, then each module around it
-  const heldBy = (m) => {
-    const c = [m];
-    let t = m;
-    while (c.length <= MAX_DEPTH) {
-      t = t.parent ? byPath.get(t.parent) : null;
-      if (!t) break;
-      c.push(t);
-    }
-    return c;
-  };
+  const { violations, debt, file, exceptionOf } = makeViolationFiler(exceptions, judging);
+  const modules = judgeModules(sm, exceptionOf);
+  const mixed = judgeMixedLevels(sm, exceptionOf, isTest);
+  const edges = judgeEdges(sm, exceptionOf, isTest);
+  for (const found of [modules.found, findUntaggedFiles(sm, isTest), mixed.found, edges.found]) found.forEach(file);
+  violations.push(...levelNameViolations(sm));
+  // a cycle is pushed as it is: no exception hides one
+  const c = moduleCycles(sm, isTest);
+  for (const x of c.cycles) violations.push({ kind: "cycle", grade: KINDS["cycle"], ...x });
+  const unread = { tests: Math.max(0, sm.tests.length - MAX_TESTS), exceptions: sm.exceptions.length - exceptions.length };
+  return { violations, debt, unread, cycles: c, edges: edges.edges, modules: moduleRecords(sm, edges.edges, isTest),
+    mixed: mixed.mixed, rootFiles: modules.rootFiles };
+}
+
+// The violations and the debt, filled as `file(v)` files each violation: as such, or as debt when an exception not yet
+// due covers it. `exceptionOf(v)` answers which exception covers a violation, with whether it is due, or null.
+function makeViolationFiler(exceptions, judging) {
+  const isDue = dueRule(judging.today, judging.closedVersions);
+  const coveringException = makeExceptionFinder(exceptions);
   const violations = [], debt = [];
-  // exceptions by their `from`, found by walking up the edge's folders: an edge costs its depth times the exceptions
-  // sharing one `from`, never every exception
-  // an exception naming one path covers that path's own rulings, never an edge: a file's mixed levels and missing level,
-  // a module's root files and missing level
+  const exceptionOf = (v) => {
+    const x = coveringException(v);
+    return x ? { line: x.line, until: x.until, untilKind: x.untilKind, due: isDue(x) } : null;
+  };
+  const file = (v) => {
+    const exception = exceptionOf(v);
+    if (!exception) violations.push(v);
+    else (exception.due ? violations : debt).push({ ...v, exception });
+  };
+  return { violations, debt, file, exceptionOf };
+}
+
+// The exception covering a violation: an edge's by its ends, any other by the path it names. Exceptions are kept by
+// their `from`, found by walking up the edge's folders: an edge costs its depth times the exceptions sharing one `from`,
+// never every exception. An exception naming one path covers that path's own rulings, never an edge: a file's mixed
+// levels and missing level, a module's root files and missing level.
+function makeExceptionFinder(exceptions) {
   const byFrom = new Map(), exceptionByPath = new Map();
   for (const x of exceptions) {
     if (x.path) { if (!exceptionByPath.has(x.path)) exceptionByPath.set(x.path, x); continue; }
@@ -112,85 +132,130 @@ export function rulings(sm, judging = judgingOptions()) {
     for (const p of pathAndParents(from)) for (const x of byFrom.get(p) || []) if (underPath(to, x.to)) return x;
     return null;
   };
-  // the exception covering a violation: an edge's by its ends, any other by the path it names
-  const coveringException = (v) => {
+  return (v) => {
     if (v.from) return exceptionFor(v.from, v.to);
     return exceptionByPath.get(v.file || v.module) || null;
   };
-  // a violation filed as such or as debt; returns the exception that covers it, with whether it is due, or null
-  const report = (v) => {
-    const x = coveringException(v);
-    if (!x) { violations.push(v); return null; }
-    const exception = { line: x.line, until: x.until, untilKind: x.untilKind, due: isDue(x) };
-    (exception.due ? violations : debt).push({ ...v, exception });
-    return exception;
-  };
-  // a deep module has one entry (ADR 0005): several files at its root are one ruling naming them all, none the entry.
-  // Each with the exception covering it, for the page
-  const rootFiles = new Map();
+}
+
+// A module with no level, and one with several root files: a deep module has one entry (ADR 0005), so several files at
+// its root are one ruling naming them all, none the entry. { found, rootFiles }: the violations found, and by module
+// the exception covering its root files, for the page.
+function judgeModules(sm, exceptionOf) {
+  const found = [], rootFiles = new Map();
   for (const m of sm.modules) {
-    if (m.level == null) report({ kind: "no-level", grade: KINDS["no-level"], module: m.path });
-    if (m.rootFiles.length > 1) rootFiles.set(m.path, report({ kind: "root-files", grade: KINDS["root-files"], module: m.path, files: [...m.rootFiles].sort() }));
+    if (m.level == null) found.push({ kind: "no-level", grade: KINDS["no-level"], module: m.path });
+    if (m.rootFiles.length <= 1) continue;
+    const violation = { kind: "root-files", grade: KINDS["root-files"], module: m.path, files: [...m.rootFiles].sort() };
+    found.push(violation);
+    rootFiles.set(m.path, exceptionOf(violation));
   }
-  // a file no module holds carries its own tag, and so does a private file: it takes no level from its entry (ADR 0005)
+  return { found, rootFiles };
+}
+
+// A file with no level: a file no module holds carries its own tag, and so does a private file, which takes no level
+// from its entry (ADR 0005). The violations found.
+function findUntaggedFiles(sm, isTest) {
   const untagged = (f) => sm.fileLevels[f] == null && !isTest(f);
-  for (const f of sm.loose) if (untagged(f)) report({ kind: "no-level", grade: KINDS["no-level"], file: f });
+  const noLevel = (f) => ({ kind: "no-level", grade: KINDS["no-level"], file: f });
+  const found = sm.loose.filter(untagged).map(noLevel);
   for (const m of sm.modules) {
     const rootFileSet = new Set(m.rootFiles);
     // a source file below the root; a root file is judged as the module
     const isPrivate = (f) => SOURCE.test(f) && !rootFileSet.has(f);
-    for (const f of m.files || []) if (isPrivate(f) && untagged(f)) report({ kind: "no-level", grade: KINDS["no-level"], file: f });
+    found.push(...(m.files || []).filter((f) => isPrivate(f) && untagged(f)).map(noLevel));
   }
-  // a file naming several levels mixes them; a deep module whose files hold different levels does not. Each with the
-  // exception covering it, for the page
-  const mixed = new Map();
+  return found;
+}
+
+// A file naming several levels mixes them; a deep module whose files hold different levels does not. { found, mixed }:
+// the violations found, and each file with its levels and the exception covering it, for the page.
+function judgeMixedLevels(sm, exceptionOf, isTest) {
+  const found = [], mixed = new Map();
   for (const f of Object.keys(sm.mixed || {}).sort()) {
     if (isTest(f)) continue;
-    const exception = report({ kind: "mixed-levels", grade: KINDS["mixed-levels"], file: f, levels: sm.mixed[f] });
-    mixed.set(f, { levels: sm.mixed[f], exception });
+    const violation = { kind: "mixed-levels", grade: KINDS["mixed-levels"], file: f, levels: sm.mixed[f] };
+    found.push(violation);
+    mixed.set(f, { levels: sm.mixed[f], exception: exceptionOf(violation) });
   }
-  // an edge into the code read — a module, or a file no module holds — is ruled; one leaving it gets no rulings, and the
-  // page counts it outside. A dependency with an end that is no code file, a stylesheet or a data file, gets none either
-  const edges = new Map();
+  return { found, mixed };
+}
+
+// An edge into the code read — a module, or a file no module holds — is ruled; one leaving it gets no rulings, and the
+// page counts it outside. A dependency with an end that is no code file, a stylesheet or a data file, gets none either.
+// { found, edges }: the violations found, and the folded edges by edgeKey.
+function judgeEdges(sm, exceptionOf, isTest) {
+  const byPath = new Map(sm.modules.map((m) => [m.path, m]));
+  const found = [], edges = new Map();
   for (const e of sm.edges) {
     if (!isCodeEdge(e)) continue;
     const key = edgeKey(e), seen = edges.get(key);
     if (seen) { seen.n++; continue; }
-    const test = isTest(e.from), b = e.toModule ? byPath.get(e.toModule) : null;
-    // a test under a tests mirror is ruled from inside the module at its mirrored path; its record keeps its own place
-    const a = e.fromModule ? byPath.get(e.fromModule) : (test && mirroredOwnerOrNull(sm.mirrors, byPath, e.from)) || null;
-    if (!b && !e.toLoose) continue;
-    // file to file: the two files' levels, whatever modules hold them
-    const out = !test && outward(placed(sm, e.fromLevel), placed(sm, e.toLevel));
-    const edge = {
-      from: e.from, to: e.to, kind: e.kind, n: 1, fromModule: e.fromModule, toModule: b ? b.path : null, fromLevel: e.fromLevel, toLevel: e.toLevel,
-      fromLoose: e.fromLoose, toLoose: e.toLoose,
-      rulings: new Set([test ? "test" : out ? "outward" : "inward"]), until: null,
-    };
-    edges.set(key, edge);
-    const rule = (v) => {
-      const exception = report(v);
-      if (v.kind !== "outward") edge.rulings.add(v.kind);
-      if (v.skipped) edge.skipped = v.skipped;
-      if (exception) { edge.rulings.add(exception.due ? "due" : "excepted"); edge.until = exception.until; }
-    };
-    const ends = { from: e.from, to: e.to, edge: e.kind, module: b ? b.path : null };
-    // the entry rule holds for a module only: a file no module holds is reached by any file
-    let breach = null;
-    if (b) breach = test ? testPastInterface(a, heldBy(b), e.to) : pastEntry(a, heldBy(b), e.to);
-    if (breach) rule({ grade: KINDS[breach.kind], ...ends, ...breach });
-    if (out) rule({ kind: "outward", grade: KINDS["outward"], ...ends });
+    const judged = judgeOneEdge(sm, e, { byPath, exceptionOf, isTest });
+    if (!judged) continue;
+    edges.set(key, judged.edge);
+    found.push(...judged.found);
   }
-  // levels are layers, not folders: a level named like a module's last folder, in any case, once per module
+  return { found, edges };
+}
+
+// One edge's first reading of its pair and kind, judged: { edge, found }, the edge with its rulings and the breaches of
+// the entry rule and the levels' direction it holds; null for an edge leaving the code read.
+function judgeOneEdge(sm, e, { byPath, exceptionOf, isTest }) {
+  const test = isTest(e.from), b = e.toModule ? byPath.get(e.toModule) : null;
+  // a test under a tests mirror is ruled from inside the module at its mirrored path; its record keeps its own place
+  const a = e.fromModule ? byPath.get(e.fromModule) : (test && mirroredOwnerOrNull(sm.mirrors, byPath, e.from)) || null;
+  if (!b && !e.toLoose) return null;
+  // file to file: the two files' levels, whatever modules hold them
+  const out = !test && outward(placed(sm, e.fromLevel), placed(sm, e.toLevel));
+  const edge = {
+    from: e.from, to: e.to, kind: e.kind, n: 1, fromModule: e.fromModule, toModule: b ? b.path : null, fromLevel: e.fromLevel, toLevel: e.toLevel,
+    fromLoose: e.fromLoose, toLoose: e.toLoose,
+    rulings: new Set([ruleDirection(test, out)]), until: null,
+  };
+  const found = [];
+  const rule = (v) => {
+    const exception = exceptionOf(v);
+    found.push(v);
+    if (v.kind !== "outward") edge.rulings.add(v.kind);
+    if (v.skipped) edge.skipped = v.skipped;
+    if (exception) { edge.rulings.add(exception.due ? "due" : "excepted"); edge.until = exception.until; }
+  };
+  const ends = { from: e.from, to: e.to, edge: e.kind, module: b ? b.path : null };
+  // the entry rule holds for a module only: a file no module holds is reached by any file
+  let breach = null;
+  if (b) breach = test ? testPastEntry(a, listHoldingModules(byPath, b), e.to) : pastEntry(a, listHoldingModules(byPath, b), e.to);
+  if (breach) rule({ grade: KINDS[breach.kind], ...ends, ...breach });
+  if (out) rule({ kind: "outward", grade: KINDS["outward"], ...ends });
+  return { edge, found };
+}
+
+// an edge's first ruling: a test's, else outward or inward
+function ruleDirection(test, out) {
+  if (test) return "test";
+  return out ? "outward" : "inward";
+}
+
+// the modules holding a module's files, itself first, then each module around it
+function listHoldingModules(byPath, m) {
+  const c = [m];
+  let t = m;
+  while (c.length <= MAX_DEPTH) {
+    t = t.parent ? byPath.get(t.parent) : null;
+    if (!t) break;
+    c.push(t);
+  }
+  return c;
+}
+
+// Levels are layers, not folders: a level named like a module's last folder, in any case, once per module.
+function levelNameViolations(sm) {
+  const out = [];
   for (const m of sm.modules) {
     const level = m.path.slice(m.path.lastIndexOf("/") + 1).toLowerCase();
-    if (sm.ringOf[level] !== undefined) violations.push({ kind: "level-name", grade: KINDS["level-name"], level, module: m.path });
+    if (sm.ringOf[level] !== undefined) out.push({ kind: "level-name", grade: KINDS["level-name"], level, module: m.path });
   }
-  // a cycle is pushed as it is: no exception hides one
-  const c = moduleCycles(sm, isTest);
-  for (const x of c.cycles) violations.push({ kind: "cycle", grade: KINDS["cycle"], ...x });
-  const unread = { tests: Math.max(0, sm.tests.length - MAX_TESTS), exceptions: sm.exceptions.length - exceptions.length };
-  return { violations, debt, unread, cycles: c, edges, modules: moduleRecords(sm, edges, isTest), mixed, rootFiles };
+  return out;
 }
 
 // The entry rule on an edge to file `to` from module `from` (null for none) into the modules `held` holding `to`, the
@@ -210,38 +275,41 @@ function pastEntry(from, held, to) {
   const c = crossing(from, held, to);
   return c.crossed.length ? { kind: "past-entry", skipped: c.skipped } : null;
 }
-// A test's edge breaks it past the interface, from inside the deepest module too: { kind, skipped }, or null.
-function testPastInterface(from, held, to) {
+// A test's edge breaks it past an entry, from inside the deepest module too: a test reaches a module through its
+// entry. { kind, skipped }, or null.
+function testPastEntry(from, held, to) {
   const c = crossing(from, held, to);
-  return c.crossed.length || !c.intoRootFile ? { kind: "test-past-interface", skipped: c.skipped } : null;
+  return c.crossed.length || !c.intoRootFile ? { kind: "test-past-entry", skipped: c.skipped } : null;
 }
 
 // The strongly connected parts of a graph given as adjacency lists of indices (Tarjan's, iterative so a long chain
 // cannot overflow the stack): each part a list of indices.
 function components(adj) {
   const index = new Array(adj.length).fill(-1), low = new Array(adj.length).fill(0), on = new Array(adj.length).fill(false);
-  const stack = [], out = [];
+  // stack: the open parts' vertices; work: the walk's path, each vertex with the next of its edges to follow
+  const stack = [], work = [], out = [];
   let next = 0;
+  const open = (v) => { index[v] = low[v] = next++; stack.push(v); on[v] = true; work.push([v, 0]); };
+  // the edge v → w followed: w opened and walked next, or, already on the stack, lowering v's link
+  const follow = (v, w) => {
+    if (index[w] < 0) open(w); else if (on[w]) low[v] = Math.min(low[v], index[w]);
+  };
+  // the part rooted at v, taken off the stack
+  const closePart = (v) => {
+    const part = [];
+    let w;
+    do { w = stack.pop(); on[w] = false; part.push(w); } while (w !== v);
+    return part;
+  };
   for (let s = 0; s < adj.length; s++) {
     if (index[s] >= 0) continue;
-    index[s] = low[s] = next++; stack.push(s); on[s] = true;
-    const work = [[s, 0]];
+    open(s);
     while (work.length) {
       const top = work[work.length - 1], v = top[0];
-      if (top[1] < adj[v].length) {
-        const w = adj[v][top[1]++];
-        if (index[w] < 0) { index[w] = low[w] = next++; stack.push(w); on[w] = true; work.push([w, 0]); }
-        else if (on[w]) low[v] = Math.min(low[v], index[w]);
-        continue;
-      }
+      if (top[1] < adj[v].length) { follow(v, adj[v][top[1]++]); continue; }
       work.pop();
       if (work.length) { const u = work[work.length - 1][0]; low[u] = Math.min(low[u], low[v]); }
-      if (low[v] === index[v]) {
-        const part = [];
-        let w;
-        do { w = stack.pop(); on[w] = false; part.push(w); } while (w !== v);
-        out.push(part);
-      }
+      if (low[v] === index[v]) out.push(closePart(v));
     }
   }
   return out;
@@ -254,39 +322,7 @@ function components(adj) {
 // the two-way pairs inside it. { cycles: [{ parent (null among top modules), modules, moreModules, pairs, morePairs }]
 // (the first MAX_CYCLES groups, by parent and first module, each cut at MAX_CYCLE_MODULES and MAX_CYCLE_PAIRS), more }
 function moduleCycles(sm, isTest) {
-  const byPath = new Map(sm.modules.map((m) => [m.path, m])), chains = new Map();
-  // a module's path of modules from its top one down; a parent is a strict prefix, so the walk ends
-  const chainOf = (m) => {
-    if (!chains.has(m.path)) {
-      const c = [];
-      for (let t = m; t; t = t.parent ? byPath.get(t.parent) : null) c.push(t.path);
-      chains.set(m.path, c.reverse());
-    }
-    return chains.get(m.path);
-  };
-  const groups = new Map(), pairs = new Set();
-  for (const e of sm.edges) {
-    if (!e.fromModule || !e.toModule || e.fromModule === e.toModule || isTest(e.from) || !isCodeEdge(e)) continue;
-    const a = byPath.get(e.fromModule), b = byPath.get(e.toModule);
-    if (!a || !b) continue;
-    const ca = chainOf(a), cb = chainOf(b);
-    let i = 0;
-    while (i < ca.length && i < cb.length && ca[i] === cb[i]) i++;
-    if (i === ca.length || i === cb.length) continue;
-    const parent = i ? ca[i - 1] : null, pair = `${parent}\n${ca[i]}\n${cb[i]}`;
-    if (pairs.has(pair)) continue;
-    pairs.add(pair);
-    if (!groups.has(parent)) groups.set(parent, new Map());
-    const g = groups.get(parent);
-    if (!g.has(ca[i])) g.set(ca[i], []);
-    g.get(ca[i]).push(cb[i]);
-  }
-  // names in order, the top (null) first
-  const byName = (x, y) => {
-    if (x === y) return 0;
-    if (x === null || y === null) return x === null ? -1 : 1;
-    return x < y ? -1 : 1;
-  };
+  const groups = groupSiblingDependencies(sm, isTest);
   const cycles = [];
   let found = 0;
   for (const parent of [...groups.keys()].sort(byName)) {
@@ -297,10 +333,7 @@ function moduleCycles(sm, isTest) {
     const parts = components(adj).filter((p) => p.length > 1).map((p) => p.sort((x, y) => x - y)).sort((x, y) => x[0] - y[0]);
     for (const part of parts) {
       if (found++ >= MAX_CYCLES) continue;
-      // the two-way pairs: both directions inside the group, each pair once, the earlier module first
-      const out = new Set(), twoWay = [];
-      for (const v of part) for (const w of adj[v]) out.add(`${v},${w}`);
-      for (const v of part) for (const w of adj[v]) if (v < w && out.has(`${w},${v}`)) twoWay.push([names[v], names[w]]);
+      const twoWay = findTwoWayPairs(part, adj, names);
       cycles.push({
         parent, modules: part.slice(0, MAX_CYCLE_MODULES).map((x) => names[x]), moreModules: Math.max(0, part.length - MAX_CYCLE_MODULES),
         pairs: twoWay.slice(0, MAX_CYCLE_PAIRS), morePairs: Math.max(0, twoWay.length - MAX_CYCLE_PAIRS),
@@ -308,4 +341,59 @@ function moduleCycles(sm, isTest) {
     }
   }
   return { cycles, more: found - cycles.length };
+}
+
+// The dependencies between sibling modules, by the parent holding both (null among top modules): parent → module →
+// the siblings it depends on, each pair once. An edge counts for the two siblings under the deepest module holding both
+// ends; a parent and its child are no pair.
+function groupSiblingDependencies(sm, isTest) {
+  const byPath = new Map(sm.modules.map((m) => [m.path, m])), chainOf = makeChainFinder(byPath);
+  const groups = new Map(), pairs = new Set();
+  for (const e of sm.edges) {
+    const betweenModules = e.fromModule && e.toModule && e.fromModule !== e.toModule && !isTest(e.from) && isCodeEdge(e);
+    if (!betweenModules) continue;
+    const a = byPath.get(e.fromModule), b = byPath.get(e.toModule);
+    if (!a || !b) continue;
+    const ca = chainOf(a), cb = chainOf(b), shorter = Math.min(ca.length, cb.length);
+    let i = 0;
+    while (i < shorter && ca[i] === cb[i]) i++;
+    if (i === shorter) continue;
+    const parent = i ? ca[i - 1] : null, pair = `${parent}\n${ca[i]}\n${cb[i]}`;
+    if (pairs.has(pair)) continue;
+    pairs.add(pair);
+    if (!groups.has(parent)) groups.set(parent, new Map());
+    const g = groups.get(parent);
+    if (!g.has(ca[i])) g.set(ca[i], []);
+    g.get(ca[i]).push(cb[i]);
+  }
+  return groups;
+}
+
+// a module's path of modules from its top one down, each module's walked once; a parent is a strict prefix, so the walk
+// ends
+function makeChainFinder(byPath) {
+  const chains = new Map();
+  return (m) => {
+    if (!chains.has(m.path)) {
+      const c = [];
+      for (let t = m; t; t = t.parent ? byPath.get(t.parent) : null) c.push(t.path);
+      chains.set(m.path, c.reverse());
+    }
+    return chains.get(m.path);
+  };
+}
+
+// names in order, the top (null) first
+function byName(x, y) {
+  if (x === y) return 0;
+  if (x === null || y === null) return x === null ? -1 : 1;
+  return x < y ? -1 : 1;
+}
+
+// the two-way pairs of a cycle's part: both directions inside the group, each pair once, the earlier module first
+function findTwoWayPairs(part, adj, names) {
+  const out = new Set(), twoWay = [];
+  for (const v of part) for (const w of adj[v]) out.add(`${v},${w}`);
+  for (const v of part) for (const w of adj[v]) if (v < w && out.has(`${w},${v}`)) twoWay.push([names[v], names[w]]);
+  return twoWay;
 }

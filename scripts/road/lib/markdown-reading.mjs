@@ -1,7 +1,7 @@
-// @level domain
-// Roadkeeper — The Road's reading of Markdown, shared by the page's drawing (page/lib/markdown-subset.mjs) and the
-// reading of an issue's body (issue-body.mjs): a heading's line, a list's entries, and an inline span with a cut that
-// keeps it whole. It draws nothing; the text is a stranger's, read as data.
+// @level kernel
+// Roadkeeper — generic Markdown reading, knowing nothing of the project: a heading's line, a list's entries, and an
+// inline span with a cut that keeps it whole. The Road's page draws with it (page/lib/markdown-subset.mjs) and the
+// reading of an issue's body reads with it (issue-body.mjs). It draws nothing; the text is a stranger's, read as data.
 
 import { cutAt, fenceStep } from "../../_text.mjs";
 

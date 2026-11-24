@@ -1,6 +1,6 @@
 // @level main
 // Roadkeeper — The Road's entry, its one interface (ADR 0005): the page, the road model and the session-start line. It wires the page's sources
-// (infrastructure), the road model (domain), the page's HTML (presentation, through the page's entry, page/page.mjs) and
+// and the tracker's issue search (infrastructure), the road model (domain), the page's HTML (presentation, through the page's entry, page/page.mjs) and
 // the structure module's Architecture tab part, and draws the page under its budget a size step at a time; everything
 // under lib/ and page/ is private.
 //
@@ -11,6 +11,7 @@
 import { basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { architecture, report } from "../structure/structure.mjs";
+import { issueSearch } from "./lib/issue-search.mjs";
 import { modelSources, pageSources, pageTokens } from "./lib/page-sources.mjs";
 import { roadModel as modelOf } from "./lib/road-model.mjs";
 import { onePagerName } from "./lib/issue-body.mjs";
@@ -58,6 +59,7 @@ export function roadPage(root, tracker, { today, linkBase, tokensPath = PLUGIN_T
     tokens: pageTokens(tokensPath),
     projectName: onePagerName(sources.onePager) || repoName || basename(root) || "This project",
     linkBase,
+    issueSearch,
   }, structure.declared ? structure : null);
   const bytes = Buffer.byteLength(html, "utf8");
   if (bytes > MAX_PAGE) return { refused: `the page is ${(bytes / 1024 / 1024).toFixed(1)} MB even at the tightest fold, over the ${MAX_PAGE / 1024 / 1024} MB cap — no page written.` };

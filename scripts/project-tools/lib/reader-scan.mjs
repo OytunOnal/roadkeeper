@@ -8,7 +8,8 @@
 import { lstatSync } from "node:fs";
 import { join } from "node:path";
 import { readPlainFile } from "../../_files.mjs";
-import { shownName, workingFile } from "./commit-tree.mjs";
+import { workingFile } from "./commit-tree.mjs";
+import { shownName } from "./shown-name.mjs";
 import { namingText } from "./naming-text.mjs";
 import { exportedNames, namesSibling, namingPattern, readersThroughEdges, testHelpers } from "./reader-rule.mjs";
 

@@ -178,9 +178,21 @@ _Avoid_: package, feature
 The one file at a deep module's folder root; code outside the module depends on it or runs it, and on nothing else in the folder. Its first comment names its level: the outermost level it wires.
 _Avoid_: public file, index, interface file
 
+**Seam**:
+Where code outside a module calls it: a command or a hook run as a program, a deep module's entry, a top-level module's exports (a file in no deep module), a page's embedded entry. Two cases at different seams checking one behaviour are weighed as unneeded, not as a repeat.
+_Avoid_: test surface, touchpoint
+
 **Root file**:
 A source file directly in a deep module's folder, tests aside. With more than one, the module has no entry, and the check reports them.
 _Avoid_: top-level file, interface file
+
+**Kernel**:
+The innermost level: generic computation that knows nothing of the project (text, paths, dates), which anyone depends on as on the language's own library.
+_Avoid_: utils, common, shared
+
+**Inner levels**:
+Kernel, domain and application, the levels purity bounds: no disk, clock, network or process. Purity bounds them; it never places code in them.
+_Avoid_: pure levels, core
 
 **Mixed levels**:
 Of a file: it names more than one level. A violation; a deep module whose files hold different levels is not.
@@ -294,6 +306,18 @@ The line `path:line:col: CODE message` a linter prints for one finding, the colu
 **Case id**:
 A test case's handle, the first word of its name, saying what it checks: named in a command, a review or a threat's row, and kept when the rest of the name is reworded.
 _Avoid_: case number, test code
+
+**Test sweep**:
+The milestone close's read of a project's suite for cases of the five kinds, laid out as cards with their coverage lines for the human's pick.
+_Avoid_: test audit, suite cleanup
+
+**Card** (test sweep):
+One finding of the test sweep: a test file's cases, their kind, the reason, and the change it proposes, a deletion or a move to the entry, shown with its coverage line. The cards of one sweep, together, are its cards file.
+_Avoid_: finding row, ticket
+
+**Reach**:
+The lines of the project's code a run of tests reached, file by file, a line counting only when every non-blank character on it ran. A card's coverage line is the reach only its cases have in the whole suite.
+_Avoid_: hits, coverage set
 
 **Probe**:
 A named piece of a test's script, run in node on a case's data, whose printed result the test reads.

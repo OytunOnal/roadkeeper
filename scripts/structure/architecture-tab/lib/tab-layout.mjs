@@ -7,7 +7,7 @@
 // The page embeds each function here by its own source, in one scope with the entry's (architecture-tab.mjs) and the
 // words' (tab-words.mjs).
 
-import { countInWords } from "../../../_text.mjs";
+import { countInWords } from "../../../_words.mjs";
 import { declLine, foldLines, insideLine, listModuleNotes, markClass, moduleCardLines, moreChipText, moreChipWords } from "./tab-words.mjs";
 
 // spanOf: the bands a set of levels holds (occ), and the first and last of them; a box spans every band between, the
@@ -53,7 +53,8 @@ export function layoutBoxes(boxes, rows, o) {
     var x = 0, y = 0, lh = 0, sub = null, place = [];
     single.forEach(function (b) {
       if (b.top !== r) return;
-      if (x && (x + b.w > o.rowW || b.sub !== sub)) { x = 0; y += lh + o.gy; lh = 0; }
+      var startsLine = x && (x + b.w > o.rowW || b.sub !== sub);
+      if (startsLine) { x = 0; y += lh + o.gy; lh = 0; }
       sub = b.sub; place.push([b, x, y]); x += b.w + o.gx; lh = Math.max(lh, b.need[r] || 0); flowW = Math.max(flowW, x - o.gx);
     });
     flow[r] = { place: place, h: place.length ? y + lh : 0 };

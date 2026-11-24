@@ -4,7 +4,7 @@
 // version order and the last version. Reads milestones and issues as the tracker cleans them; plain data in and out,
 // no disk, clock, network or process.
 
-import { compareVersions, versionOf } from "./_text.mjs";
+import { compareVersions, versionOf } from "./_versions.mjs";
 
 export const CAP = 5;                          // slices a milestone holds at most (steward's versions.md, The cap)
 export const FOLD_LABEL = "duplicate";         // the label a folded issue closes with (GLOSSARY, Fold)

@@ -1,4 +1,4 @@
-// @level domain
+// @level infrastructure
 // Roadkeeper — a time limit for work that grows with its files: a floor and an allowance a file, the count its caller
 // gives, never past TIMER_MAX; and what a call stopped at its bound says.
 

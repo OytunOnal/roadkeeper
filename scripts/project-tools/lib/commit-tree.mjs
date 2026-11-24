@@ -17,12 +17,11 @@ import { tmpdir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { isPlainDir, lexists } from "../../_files.mjs";
 import { GIT_TIMEOUT, git, gitWithin, trackedFiles } from "../../_git.mjs";
-import { controlsReplaced, cutAt } from "../../_text.mjs";
 import { callStopped, limitFor } from "../../_time-limit.mjs";
+import { shownName } from "./shown-name.mjs";
 import { siblingsOf } from "./siblings.mjs";
 import { isLink, linkFolder } from "./worktree.mjs";
 
-const NAME_SHOWN = 200; // characters of a refused file's name shown
 // milliseconds each file of the commit adds to a layout call's bound: three times the slowest call measured laying out
 // Roadkeeper's own tree, `git add -A` at about 6.5 ms a file
 export const LAYOUT_PER_FILE = 20;
@@ -36,9 +35,6 @@ class LayoutStopped extends Error {}
 // a NUL-separated list of git's, as its entries
 const entries = (out) => out.split("\0").filter(Boolean);
 
-// A file name from the command line as a refusal shows it: its controls replaced, cut at NAME_SHOWN.
-export const shownName = (name) => cutAt(controlsReplaced(name), NAME_SHOWN);
-
 // The hash of the commit `name` names in the repository at `root`; null when it names none.
 export function commitNamed(root, name) {
   try { return git(["rev-parse", "--verify", "--quiet", "--end-of-options", `${name}^{commit}`], root) || null; } catch { return null; }
@@ -51,6 +47,9 @@ export function namedCommit({ root, name, label }, say) {
   if (!hash) say(`${label}: no tree built: no commit of that name`);
   return hash;
 }
+
+// The hash of the tree of the commit `commit` in the repository at `root`; throws when git cannot say.
+export const treeOf = (root, commit) => git(["rev-parse", "--verify", "-q", `${commit}^{tree}`], root);
 
 // The bound of a git listing in the worktree at `root`: git's own bound and LISTING_PER_FILE a file its index tracks.
 export const listingLimit = (root) => limitFor({ floor: GIT_TIMEOUT, perFile: LISTING_PER_FILE }, trackedFiles(root));
@@ -71,8 +70,25 @@ export const commitFiles = (root, hash) => listing(["ls-tree", "-r", "-z", "--na
 export const workingFiles = (root) => listing(["ls-files", "-z", "-c", "-o", "--exclude-standard"], root)
   .filter((f) => lexists(join(root, f)));
 
+// Of `paths`, by their paths from the worktree's root `root`, those the commit `hash` holds: { held, differing },
+// `differing` those of them whose working tree's file differs from the commit's copy. Throws when git fails (listing).
+export function heldByCommit(root, hash, paths) {
+  if (!paths.length) return { held: [], differing: [] };
+  const inCommit = new Set(commitFiles(root, hash));
+  const held = paths.filter((p) => inCommit.has(p));
+  if (!held.length) return { held, differing: [] };
+  const specs = held.map((p) => `:(literal)${p}`);
+  const changed = new Set(listing(["diff", "--name-only", "--no-renames", "-z", hash, "--", ...specs], root));
+  return { held, differing: held.filter((p) => changed.has(p)) };
+}
+
 // whether the worktree at `root` has a commit yet: HEAD names one
 const hasHead = (root) => { try { git(["rev-parse", "--verify", "-q", "HEAD"], root); return true; } catch { return false; } };
+
+// Whether the last commit of the worktree at `root` holds `path`, its path from the root: false with no commit yet.
+export function inLastCommit(root, path) {
+  try { git(["cat-file", "-e", `HEAD:${path}`], root); return true; } catch { return false; }
+}
 
 // The uncommitted files of the working tree at `root`, by their paths from it: changed against HEAD, staged or not, a
 // deleted one included, then the untracked files git does not ignore; with no commit yet (hasHead), every file in the
@@ -93,6 +109,13 @@ export function pathFromRoot(root, name) {
   const outside = !rest || rest === ".." || rest.startsWith(".." + sep) || isAbsolute(rest);
   return outside ? null : rest.split(sep).join("/");
 }
+
+// The path a name gives from the root `root`, `/`-separated (pathFromRoot); null when it leads outside the root, or is
+// given absolute or from a drive, so no path from the root.
+export const pathInside = (root, name) => (isAbsolute(name) || /^[A-Za-z]:/.test(name) ? null : pathFromRoot(root, name));
+
+// Whether anything, a link included, is at the path `path` from the root `root`.
+export const onDisk = (root, path) => lexists(join(root, path));
 
 // The test file `name` names in the working tree at `root`, by its path from the root, when it is a plain file inside
 // the root with no link on the way; else null.
@@ -126,10 +149,13 @@ function layoutStep(step, said) {
 const layoutCall = (args, cwd, { own, bound }) =>
   layoutStep(() => gitWithin(args, cwd, { own, timeout: bound }), (e) => callStopped(`git ${args[0]}`, bound, e));
 
-// The working tree's file `f` copied over the tree's, the folders holding it made first.
+// The working tree's file `f` copied over the tree's, the folders holding it made first; a link the commit laid in its
+// place removed first, so nothing is written through it.
 function copiedIn(root, tree, f) {
-  mkdirSync(dirname(join(tree, f)), { recursive: true });
-  copyFileSync(join(root, f), join(tree, f));
+  const to = join(tree, f);
+  mkdirSync(dirname(to), { recursive: true });
+  if (isLink(to)) unlinkSync(to);
+  copyFileSync(join(root, f), to);
 }
 
 // The commit's files checked out into the tree; the working tree's `copied` files copied in over them; the tree made a

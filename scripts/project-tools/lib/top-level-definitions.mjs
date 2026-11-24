@@ -11,7 +11,7 @@
 // code, not a string, as a word or a word's first part before a dot. Pure, and each text is read linearly; the regexes
 // are bounded.
 
-import { JS_TS, PYTHON, SPACE, bracketDepth, codeMask } from "./naming-text.mjs";
+import { JS_TS, PYTHON, SPACE, bracketDepth, codeMask } from "./source-lexing.mjs";
 
 export const WHOLE = "whole"; // a file reached whole: every importer reaches through it, whatever names it uses
 /** What of a file reaches a changed file: WHOLE, the Set of its top-level names it reaches through, or null for none.

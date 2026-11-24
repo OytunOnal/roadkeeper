@@ -10,7 +10,7 @@
 
 import { eslintNumbers } from "../../../_eslint-numbers.mjs";
 import { caseFromTestcase, readResultsCases } from "./junit-results.mjs";
-import { CAUSES, buildLintRead, isUnusedName, readEslintCause } from "./lint-message.mjs";
+import { CAUSES, buildLintRead, isUnusedName, markSyntaxError, readEslintCause } from "./lint-message.mjs";
 import { withLoadCause } from "./load-cause.mjs";
 
 // A JUnit testcase as a case of the run that was given `files`.
@@ -39,8 +39,15 @@ function eslintReport(output) {
   return null;
 }
 
+// An error of ESLint's report as a breach: { line, rule, numbers }; a parse error, with no rule id, read as the rule
+// `parse`, marked a syntax error.
+function readReportError(error) {
+  const breach = { line: error.line, rule: error.ruleId ?? "parse", numbers: eslintNumbers(error.message) };
+  return error.ruleId == null ? markSyntaxError(breach) : breach;
+}
+
 // A lint run read from ESLint's JSON (`--format json`): { breaches }, its errors, warnings and unused names aside, each
-// { line, rule, numbers }, a parse error's rule `parse`; with { cause } beside them when ESLint's own sentence names one
+// { line, rule, numbers }, a parse error's rule `parse`, marked `syntaxError`; with { cause } beside them when ESLint's own sentence names one
 // (lint-message.mjs), alone when there is no breach. Else { cause }: `failed` when the run did not pass and its report
 // holds no error (a warning ESLint was told to fail on) or there is no report, `unread` when it passed with none.
 function lintBreaches({ output, passed }) {
@@ -48,8 +55,7 @@ function lintBreaches({ output, passed }) {
   const report = eslintReport(output);
   if (!report) return { cause: cause ?? (passed ? CAUSES.unread : CAUSES.failed) };
   const errors = report.flatMap((r) => (Array.isArray(r?.messages) ? r.messages : [])).filter((m) => m?.severity === 2);
-  const breaches = errors.filter((m) => !isUnusedName(m.ruleId))
-    .map((m) => ({ line: m.line, rule: m.ruleId ?? "parse", numbers: eslintNumbers(m.message) }));
+  const breaches = errors.filter((m) => !isUnusedName(m.ruleId)).map(readReportError);
   return buildLintRead({ breaches, cause, found: errors.length, passed });
 }
 

@@ -1,9 +1,9 @@
 // @level domain
 // Roadkeeper — the version forecast: each open milestone's slices and bump, and the number each would carry, from a tracker
-// snapshot as the tracker cleans it. Plain data and the lines the command prints; no disk, clock, network or process.
+// snapshot as the tracker cleans it. Plain data; the lines the command prints are scripts/_version-forecast-lines.mjs's.
 
 import { CAP, lastVersion, openByVersion, slicesOf, titleParts } from "./_milestones.mjs";
-import { compareVersions, controlsReplaced, cutAt, versionNumbers } from "./_text.mjs";
+import { compareVersions, versionNumbers } from "./_versions.mjs";
 
 // A slice's bump by its labels, the first that matches: the user must act (X), internal work, a fix or polish (Z), a
 // new promise (Y).
@@ -82,25 +82,3 @@ export const keepsCloseReasons = (snap) => {
   const closed = snap.issues.filter((i) => i.state === "CLOSED");
   return !closed.length || closed.some((i) => i.stateReason);
 };
-
-const SHOWN = 120; // characters of a title printed: enough to know it, short enough for one line
-// A stranger's title as printed: made printable, cut at SHOWN.
-const shown = (title) => {
-  const t = controlsReplaced(title);
-  return t.length > SHOWN ? cutAt(t, SHOWN) + "…" : t;
-};
-
-// What the command prints of a forecast: a line per open milestone, then one per slice with no kind.
-export function forecastLines({ milestones, noKind }) {
-  const next = (m) => (m.next === null ? "no version: not renumbered" : shown(m.next));
-  return [
-    ...milestones.map((m) => `#${m.number}  ${shown(m.title)}  slices ${m.slices}  room ${m.room}  bump ${m.bump}  → ${next(m)}`),
-    ...noKind.map((i) => `no kind  #${i.number}  ${shown(i.title)}`),
-  ];
-}
-
-// What the command says of each rename step the tracker sent ({ number, from, to, error }): renamed, or refused with
-// `gh`'s line.
-export const renameLines = (steps) => steps.map((s) => s.error
-  ? `refused #${s.number}  ${shown(s.from)}  → ${shown(s.to)}  (${shown(s.error)})`
-  : `renamed #${s.number}  ${shown(s.from)}  → ${shown(s.to)}`);

@@ -19,7 +19,8 @@
 // on the way from the config folder, and the output file a background green's task notification there names, read-only,
 // an absolute `….output` path to a plain file under the OS temp folder with no link on the way from it
 // (CODING_STANDARDS.md's Security).
-// Refuses: the transcript folder reached through a link stops the command; a link inside it is not read; a
+// Refuses: a --to before its --from stops the command before any read; the transcript folder reached through a link
+// stops the command; a link inside it is not read; a
 // transcript last written before the window starts is never opened; at most 5,000 transcripts are read; a line over
 // 64 MB is skipped unparsed; an output file outside the temp folder, a link, not a file or over 16 MB reads "times not
 // found"; a run's name is cut to 80 characters, a line listing greens to 200. The table says what any bound cut, and
@@ -59,17 +60,20 @@ const parseTimeOrStop = (text, option) => {
   return time;
 };
 
-// the retro's number and the window the arguments give
+// the retro's number and the window the arguments give; a --to before its --from stops the command
 function parseArgs(argv) {
   const given = { number: null, from: null, to: null };
+  let fromText = null, toText = null; // each time as given, for the line a reversed window stops with
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--from") given.from = parseTimeOrStop(argv[++i], "--from");
-    else if (a === "--to") given.to = parseTimeOrStop(argv[++i], "--to");
+    if (a === "--from") { fromText = argv[++i]; given.from = parseTimeOrStop(fromText, "--from"); }
+    else if (a === "--to") { toText = argv[++i]; given.to = parseTimeOrStop(toText, "--to"); }
     else if (/^\d{1,9}$/.test(a) && given.number === null) given.number = Number(a);
     else fail(`slice-runs.mjs: unknown argument ${a}`);
   }
   if (given.number === null) fail("slice-runs.mjs: name the spec's number");
+  const isReversed = given.from !== null && given.to !== null && given.to < given.from;
+  if (isReversed) fail(`slice-runs.mjs: --to (${toText}) is before --from (${fromText}): swap them`);
   return given;
 }
 

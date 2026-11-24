@@ -9,7 +9,8 @@ import {
   BOARD, FOLD_LABEL, WAITING_LABEL, closingTally, inFlight, inFlightWaitingOnYou, inVersionOrder, isCounted, isFold, isKeptRealUse, isTicket,
   isWaiting, lastVersion, openByVersion, realUseOf, sliceOf, slicesIn, specOf, titleParts,
 } from "../../_milestones.mjs";
-import { cutAt, daysBetween, escapeForPattern, isCalendarDate, versionNumbers } from "../../_text.mjs";
+import { cutAt, daysBetween, escapeForPattern, isCalendarDate } from "../../_text.mjs";
+import { versionNumbers } from "../../_versions.mjs";
 import { betOf, waitsOnLineOf } from "./issue-body.mjs";
 
 const WAIT_DAYS = 7; // a waiting-on-you issue open longer than a week is late: The Road's strip and the nudge say it
@@ -50,12 +51,6 @@ function waitsOnOf(i, known) {
 // a milestone's version as drawn: its title's, or the title itself when it opens on none
 const drawnVersion = (title) => titleParts(title).version || title;
 
-// a milestone's version and name, once: "vX.Y — <name>", the version alone with no name apart from it
-function headingOf(title) {
-  const version = drawnVersion(title), name = titleParts(title).name;
-  return name && name !== version ? `${version} — ${name}` : version;
-}
-
 // The word a milestone's marker says beside its version: an open one planned; a closed one released from v1 on, closed
 // before (GLOSSARY, Release: a milestone closed from v1 on; steward's versions.md: before the launch, v0.Y.Z).
 function markerOf(m) {
@@ -65,11 +60,11 @@ function markerOf(m) {
 }
 
 // Closed milestones in the order they closed; open ones in the milestones' order, the first the current one. Each with
-// its version as drawn, its name, its heading and its marker's word.
+// its version as drawn, its name and its marker's word.
 function milestonesOf(snap) {
   const shape = (m) => ({
     number: m.number, title: m.title, version: drawnVersion(m.title), name: titleParts(m.title).name,
-    heading: headingOf(m.title), marker: markerOf(m), current: false,
+    marker: markerOf(m), current: false,
     description: m.description, state: m.state, due: m.due, closedAt: m.closedAt,
   });
   const closed = snap.milestones.filter((m) => m.state === "closed").sort(byClosed);
@@ -218,8 +213,6 @@ function tallied(ms, issues, specced) {
   const tally = (m) => ({ ...m, ...closingTally(m, issues, specced) });
   return { closed: ms.closed.map(tally), open: ms.open.map(tally) };
 }
-
-export const SLICES_SHARE = 90; // the bar's percent the slices fill; the release, which closes the milestone, the rest
 
 // The current milestone's progress, null with no milestone open: `filled`, the slices' own track's share done, rounded
 // down, null with no slice; `realUsesOpen`, its real-use issues still open, by number; and `link`, where its line

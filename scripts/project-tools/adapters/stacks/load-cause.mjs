@@ -1,4 +1,4 @@
-// @level domain
+// @level infrastructure
 // Roadkeeper — why Node's runner could not load a test file, read from the run's output. Its JUnit case for such a file
 // says only "test failed"; the error Node printed reaches the run's output, and only through a reporter writing there.
 // The spec reporter prints each file's error just before that file's `✖ <file>` mark: the file's own block, back to the

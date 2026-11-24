@@ -13,6 +13,10 @@ export const RULES_COPY = "roadkeeper-lint"; // the copy's folder at the project
 // what a refusal names: the copy command by its absolute path, quoted, since a session's shell has no plugin root
 export const COPY_COMMAND = `node "${fileURLToPath(new URL("../../copy-lint-rules.mjs", import.meta.url))}"`;
 const SOURCE = fileURLToPath(new URL("../../lint/", import.meta.url)); // the plugin's own rules
+const PURE_RULE_FILE = ["rules", "inner-levels-pure.mjs"]; // the inner levels' rule in a copy, which a copy before it lacks
+// the step recording a project's existing breaches of the inner levels' rule in ESLint's own suppressions file, which
+// the session runs: the copy starts no ESLint itself
+export const SUPPRESS_PURE_STEP = "npx eslint --suppress-rule roadkeeper/inner-levels-pure .";
 const CAP = 256 * 1024;  // bytes of one rules file: a few hundred lines
 const MAX_FILES = 100;   // files under the rules' folder: a handful of rules, with room
 const MAX_DEPTH = 4;     // folders under the rules' folder: the entry's rules/ and room
@@ -43,15 +47,17 @@ export function copyDiffers(root) {
   return !theirs || !ours || !sameFiles(ours, theirs);
 }
 
-// The plugin's rules written into the project at `root`, its copy's folder emptied first: { count } of the files
-// written, or { refused }, the line saying why nothing was.
+// The plugin's rules written into the project at `root`, its copy's folder emptied first: { count, firstPure } of the
+// files written, firstPure whether the copy replaced held no inner levels' rule, or { refused }, the line saying why
+// nothing was.
 export function writeCopy(root) {
   const copy = join(root, RULES_COPY);
   const ours = filesUnder(SOURCE);
   if (!ours) return { refused: "the plugin's lint rules could not be read" };
   const folderSafe = insideRoot(root, copy) && (!lexists(copy) || isPlainDir(root, copy));
   if (!folderSafe) return { refused: `${RULES_COPY} is a link or not a folder: nothing written` };
+  const firstPure = !lexists(join(copy, ...PURE_RULE_FILE));
   rmSync(copy, { recursive: true, force: true });
   for (const [path, text] of ours) replaceFile(join(copy, ...path.split("/")), text);
-  return { count: ours.size };
+  return { count: ours.size, firstPure };
 }

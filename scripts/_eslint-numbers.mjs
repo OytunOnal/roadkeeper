@@ -1,4 +1,4 @@
-// @level domain
+// @level infrastructure
 // Roadkeeper — the numbers an ESLint limit rule's message states, read by the js-ts stack's check at write
 // (project-tools/adapters/stacks/js-ts.mjs) and by Roadkeeper's check's formatter (tools/lint/check-format.mjs).
 

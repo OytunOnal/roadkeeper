@@ -5,7 +5,9 @@
 // Acts on the root of the worktree holding --root's folder, resolved against the working directory, else the directory
 // it is run in (scripts/_root-option.mjs). Writes scripts/lint/'s files, the shape preset and Roadkeeper's rules, into
 // roadkeeper-lint/ at that root, the folder emptied first, so the copy matches the plugin's whole; the project's ESLint config
-// loads roadkeeper-lint/lint.mjs, and the green refuses a copy that differs (scripts/project-tools/).
+// loads roadkeeper-lint/lint.mjs, and the green refuses a copy that differs (scripts/project-tools/). The first copy
+// carrying roadkeeper/inner-levels-pure ends on a line naming the step that records the rule's existing breaches as
+// suppressions, `npx eslint --suppress-rule roadkeeper/inner-levels-pure .`; the copy runs no ESLint itself.
 //
 // Exits 0 copied, 2 refused with nothing written: a usage error, no git repository, no Roadkeeper docs folder, roadkeeper-lint a
 // link or not a folder.

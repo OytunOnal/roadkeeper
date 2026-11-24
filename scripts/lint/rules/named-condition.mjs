@@ -1,4 +1,4 @@
-// @level domain
+// @level infrastructure
 // Roadkeeper's named-condition rule: an `&&`/`||` test of more than two clauses, nested ones counted flat, in an if, a loop
 // or a conditional expression is refused; a name says what it asks.
 

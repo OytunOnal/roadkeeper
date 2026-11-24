@@ -16,7 +16,8 @@ import { join, dirname, relative, resolve, sep } from "node:path";
 import { todayLocal } from "./_clock.mjs";
 import { insideRoot, replaceFile } from "./_files.mjs";
 import { rootOption } from "./_root-option.mjs";
-import { SNAPSHOT, newerReadOnDisk, readTracker, snapshotSource } from "./_tracker.mjs";
+import { SNAPSHOT, newerReadOnDisk, readTracker } from "./_tracker.mjs";
+import { snapshotSource } from "./_tracker-words.mjs";
 import { roadPage } from "./road/road.mjs";
 
 const fail = (line) => { process.stderr.write(line + "\n"); process.exit(1); };
@@ -64,8 +65,15 @@ function main() {
   } catch (e) {
     fail(`road.mjs: could not write ${out} — ${e.message}`);
   }
-  const from = tracker.live ? "the tracker" : snap ? `${snapshotSource(tracker)}${tracker.error ? ` (gh: ${tracker.error})` : ""}` : `nothing (gh: ${tracker.error || "offline"})`;
-  process.stdout.write(`${out} — ${(bytes / 1024).toFixed(0)} KB, drawn from ${from}\n`);
+  process.stdout.write(`${out} — ${(bytes / 1024).toFixed(0)} KB, drawn from ${describeDrawnSource(tracker)}\n`);
+}
+
+// What the page was drawn from: the tracker, its snapshot with gh's error if any, or nothing
+function describeDrawnSource(tracker) {
+  if (tracker.live) return "the tracker";
+  if (!tracker.snap) return `nothing (gh: ${tracker.error || "offline"})`;
+  const ghError = tracker.error ? ` (gh: ${tracker.error})` : "";
+  return `${snapshotSource(tracker)}${ghError}`;
 }
 
 main();

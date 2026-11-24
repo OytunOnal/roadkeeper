@@ -2,7 +2,7 @@
 // Roadkeeper — The Road's page's CSS, with the page's own furniture: tabs, folds, the unreadable line. Its colours, font
 // stacks and scroll shadow are the token file's names (scripts/road/tokens.css), inlined before it.
 
-import { SLICES_SHARE } from "../../lib/road-model.mjs";
+const SLICES_SHARE = 90; // the bar's percent the slices fill; the release, which closes the milestone, the rest
 
 // the page's style sheet, after the tokens and before the Architecture tab's own
 export const ROAD_STYLE = `

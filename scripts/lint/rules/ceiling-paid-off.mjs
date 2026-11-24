@@ -1,4 +1,4 @@
-// @level domain
+// @level infrastructure
 // Roadkeeper's ceiling-paid-off rule: a file holding a Ceiling, its lines within the file limit (the option `limit`), is
 // refused until its row leaves the Ceilings. Lines are counted as ESLint's max-lines counts them: the empty line after
 // a last newline is none.

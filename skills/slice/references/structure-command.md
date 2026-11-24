@@ -4,7 +4,7 @@ Read this when setting up a project's structure command, in slice 1 or after ado
 
 First, add `docs/roadkeeper/structure.json text eol=lf` to the project's `.gitattributes`: the command writes LF, and a checkout with `core.autocrlf=true` writes CRLF, so every run would read as a change with no diff.
 
-A JavaScript, TypeScript, Astro or Python project runs Roadkeeper's, in its root: `node ${CLAUDE_PLUGIN_ROOT}/scripts/structure.mjs [--packages <folder>]`. The command reads every JavaScript, TypeScript, Astro and Python file from the root, but what `## Ignore` names, `.`-names and node_modules. It reads them with the project's own dependency-cruiser and TypeScript when it holds a JavaScript, TypeScript or `.astro` file, `@astrojs/compiler` when it holds an `.astro` file; with `--packages`, with the packages in that folder; and a `.py` file with the Python 3 on the PATH. In a linked worktree with no install in that folder, it borrows the main checkout's, as borrow-install does. It writes `docs/roadkeeper/structure.json`, stamped, its `tool` naming each reader that ran. `## Tests` sorts out the tests.
+A JavaScript, TypeScript, Astro or Python project runs Roadkeeper's, in its root or on the tree `--root` names: `node ${CLAUDE_PLUGIN_ROOT}/scripts/structure.mjs [--root <path>] [--packages <folder>]`, a relative `--packages` read from that tree. The command reads every JavaScript, TypeScript, Astro and Python file from the root, but what `## Ignore` names, `.`-names and node_modules. It reads them with the project's own dependency-cruiser and TypeScript when it holds a JavaScript, TypeScript or `.astro` file, `@astrojs/compiler` when it holds an `.astro` file; with `--packages`, with the packages in that folder; with none, in the folder holding the commands file's `install` when its last part is `node_modules`, else in the root; and a `.py` file with the Python 3 on the PATH. In a linked worktree with no install in that folder, it borrows the main checkout's, as borrow-install does. It writes `docs/roadkeeper/structure.json`, stamped, its `tool` naming each reader that ran. `## Tests` sorts out the tests.
 
 ## structure.json
 
@@ -28,4 +28,4 @@ Paths are relative to the repo root, with forward slashes.
 
 ## Another stack
 
-The project writes one script: it reads the code with the stack's import graph tool and parser, writes the same JSON, and runs `node ${CLAUDE_PLUGIN_ROOT}/scripts/structure-stamp.mjs` as its last step. Add the recipe here the first time.
+The project writes one script: it reads the code with the stack's import graph tool and parser, writes the same JSON, and runs `node ${CLAUDE_PLUGIN_ROOT}/scripts/structure-stamp.mjs [--root <path>]` as its last step, on the tree `--root` names, else the working directory. Add the recipe here the first time.

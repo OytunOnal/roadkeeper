@@ -1,4 +1,4 @@
-// @level domain
+// @level presentation
 // Roadkeeper — the retro's table of a slice's runs, as Markdown, and what the read's bounds cut.
 
 import { controlsReplaced, cutAt, plural } from "../../_text.mjs";

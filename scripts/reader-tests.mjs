@@ -26,7 +26,9 @@
 // stamp.
 //
 // Exits 0 listed, or run with every case passing; 1 when a run case failed; 2 refused: a usage error, no git
-// repository, a commands file missing, malformed or with no `runTests`, a file named outside the root.
+// repository, a commands file missing, malformed or with no `runTests`, a file named outside the root, a path named
+// that is neither on disk nor in the last commit (a file the change deletes still lists its readers), or no file named
+// on a tree with no uncommitted change.
 
 import { rootOption } from "./_root-option.mjs";
 import { READER_TESTS_RUN, readerTests } from "./project-tools/project-tools.mjs";

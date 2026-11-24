@@ -15,10 +15,14 @@ import { GRAPH, readStructureFiles } from "./lib/disk-reads.mjs";
 import { diskFacts } from "./lib/disk-facts.mjs";
 import { stampFile, stampedText } from "./lib/stamp-file.mjs";
 import { sourceFiles } from "./lib/source-files.mjs";
-import { dependencyGraph, failure, foundNowhereLine, graphLine } from "./lib/dependency-graph.mjs";
+import { dependencyGraph, failure } from "./lib/dependency-graph.mjs";
+import { foundNowhereLine, graphLine } from "./lib/graph-lines.mjs";
 import { parsersFrom } from "./parsers/parsers.mjs";
 import { structureReport, undeclaredReport } from "./lib/structure-report.mjs";
 import { architectureTab } from "./architecture-tab/architecture-tab.mjs";
+import { readBaseline } from "./lib/inner-levels-pure.mjs";
+import { STRUCTURE_UNREAD, diskLines, reportLines } from "./lib/report-lines.mjs";
+import { grouped } from "./lib/cut-lines.mjs";
 
 // The structure report of the project at `root`: { declared, model, check, unread, lines, atop, diskUnread, failed }
 // (lib/structure-report.mjs). `snapshot`, the tracker snapshot or null, makes an exception due by its closed
@@ -27,10 +31,13 @@ import { architectureTab } from "./architecture-tab/architecture-tab.mjs";
 // plain docs/roadkeeper, or neither structure file in it, declares none.
 export function report(root, options = {}) {
   const files = declaredFiles(root);
-  if (!files) return undeclaredReport();
+  if (!files) return undeclaredReport(REPORT_WORDS);
   const sm = structureModel(files.md || "", files.js || "");
-  return structureReport(sm, { md: files.md, js: files.js, facts: diskFacts(root, sm) }, options);
+  return structureReport({ sm, words: REPORT_WORDS }, { md: files.md, js: files.js, facts: diskFacts(root, sm) }, options);
 }
+
+// The words the report's use case says its lines in (lib/structure-report.mjs, lib/report-lines.mjs).
+const REPORT_WORDS = { reportLines, structureUnread: STRUCTURE_UNREAD };
 
 // The structure files of the project at `root` (lib/disk-reads.mjs), or null where it declares no structure: no plain
 // docs/roadkeeper, or neither file in it.
@@ -39,13 +46,14 @@ function declaredFiles(root) {
   return files.why || !files.present ? null : files;
 }
 
-// The edges structure.json records at `root`, as its file stands, not drawn again: { recorded, edges, unread }.
-// `recorded`: whether its edges were read; `edges` each { from, to }, none when not recorded; `unread` the line saying
-// what was not read, or null: structure.json missing, a link, over the cap, or not an object with `modules` and `edges`
-// arrays, where the project declares a structure (either structure file); or the edges it could not read, left out.
+// The edges structure.json records at `root`, as its file stands, not drawn again: { recorded, edges, levelled, unread }.
+// `recorded`: whether its edges were read; `edges` each { from, to }, none when not recorded; `levelled` the files it
+// gives a level, by path; `unread` the line saying what was not read, or null: structure.json missing, a link, over the
+// cap, or not an object with `modules` and `edges` arrays, where the project declares a structure (either structure
+// file); or the edges it could not read, left out.
 export function recordedEdges(root) {
   const files = declaredFiles(root);
-  const none = (unread) => ({ recorded: false, edges: [], unread });
+  const none = (unread) => ({ recorded: false, edges: [], levelled: [], unread });
   if (!files) return none(null);
   if (files.js === null) return none(`${GRAPH} is missing, a link or over the cap`);
   const sm = structureModel(files.md || "", files.js);
@@ -54,14 +62,22 @@ export function recordedEdges(root) {
   }
   const lost = sm.malformed.filter((m) => m.where.startsWith("structure.json edges[")).length;
   const edges = sm.edges.map(({ from, to }) => ({ from, to }));
-  return { recorded: true, edges, unread: lost ? `edges of ${GRAPH} not read: ${lost}; structure-check.mjs names them` : null };
+  const levelled = Object.keys(sm.fileLevels).filter((f) => sm.fileLevels[f]);
+  return { recorded: true, edges, levelled, unread: lost ? `edges of ${GRAPH} not read: ${lost}; structure-check.mjs names them` : null };
 }
+
+// What the stamp calls (lib/stamp-file.mjs), at `root`: the structure files and the disk's facts, and the disk-unread
+// lines refusing it, cut as the check cuts a group.
+const stampAdapters = (root) => ({
+  structureFiles: () => readStructureFiles(root), facts: (sm) => diskFacts(root, sm), refusedLines: (sm, facts) => grouped(diskLines(sm, facts).disk),
+});
 
 // structure.json at `root` stamped from its disk: { text, files, digest }, the text to write in its place; or
 // { refused, why }, the lines that refused it, or why it was not read.
-export const stamp = (root) => stampFile(root);
+export const stamp = (root) => stampFile(stampAdapters(root));
 
-// The graph of the project at `root`, read by `parsers` (the Parsers port, lib/dependency-graph.mjs), stamped: a
+// The graph of the project at `root`, read by `parsers` (the Parsers port, lib/dependency-graph.mjs), stamped, its
+// baseline of impure inner-level Python files carried from the structure.json there (lib/inner-levels-pure.mjs): a
 // promise of { text, line, nowhereLine }, structure.json's text to write, the line saying what it holds and the line
 // counting the Python imports found nowhere, null for none; or { stop, refused }, why nothing is to be written, after the
 // stamp's refused lines when it refused.
@@ -69,9 +85,9 @@ export async function graph(root, parsers) {
   try {
     const sources = sourceFiles(root);
     if (sources.stop) return sources;
-    const read = await dependencyGraph(sources, parsers);
+    const read = await dependencyGraph(sources, parsers, readBaseline(readStructureFiles(root).js));
     if (read.stop) return read;
-    const stamped = stampedText(root, read.data, sources.md);
+    const stamped = stampedText(read.data, sources.md, stampAdapters(root));
     if (stamped.refused) return { stop: "the stamp refuses the lines above", refused: stamped.refused };
     return { text: stamped.text, line: graphLine(read.data, stamped.files), nowhereLine: foundNowhereLine(read.foundNowhere) };
   } catch (e) { return failure(e); }
@@ -79,8 +95,9 @@ export async function graph(root, parsers) {
 
 // The real parsers, dependency-cruiser and TypeScript, and the Astro compiler for an `.astro` file, loaded from the
 // node_modules in `packagesDir` by the read that needs them, and the PATH's Python 3 for a `.py` file: { parsers }, a
-// missing install the read's stop. `given`, the --packages folder as typed, or null for the project's own; `borrow`,
-// run before the scripts' packages load: null, or { stop } (the caller's install borrow), never run for no script.
+// missing install the read's stop. `given`, the folder --packages or the commands file names, as named, or null for
+// the project root's; `borrow`, run before the scripts' packages load: null, or { stop } (the caller's install
+// borrow), never run for no script.
 export const parsers = (packagesDir, { given = null, borrow = null } = {}) => parsersFrom(packagesDir, given, borrow);
 
 // The Architecture tab's part of the page, from a declared structure's report (the tab's module,
@@ -91,7 +108,7 @@ export const architecture = (declared, options) => architectureTab(declared, opt
 
 // Whether a path from a project's root, with forward slashes, matches a file pattern: `*` within a segment, `**` across
 // whole segments, as dependency-rules.md's patterns read.
-export { globMatch } from "./lib/source-paths.mjs";
+export { globMatch } from "./lib/path-match.mjs";
 
 // What a source file's path ends with, the files the structure reads: scripts/tools/write-structure.py restamps
 // them, its own copy held to this one.

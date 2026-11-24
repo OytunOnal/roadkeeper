@@ -5,17 +5,17 @@
 //
 // Tracker text is a stranger's: every title, name and bet is escaped.
 
-import { esc } from "../../../_text.mjs";
+import { escapeHtml } from "../../../_words.mjs";
 import { dayOf } from "../../lib/road-model.mjs";
 import { inline } from "./markdown-subset.mjs";
 import { READY_TO_CLOSE_LINK, closeSaid, issueTitleLink } from "./road-words.mjs";
 
 // A version's row: its number, its state (closed and its close date, or where an open one stands), as HTML, and its
 // name.
-const versionRow = (m, state) => `<tr><td class="num">${esc(m.version)}</td><td class="num">${state}</td><td>${inline(m.name || m.description)}</td></tr>`;
+const versionRow = (m, state) => `<tr><td class="num">${escapeHtml(m.version)}</td><td class="num">${state}</td><td>${inline(m.name || m.description)}</td></tr>`;
 
 // A closed version's state: "released on" from v1 on, "closed on" before, and its close date, when it has one.
-const closedState = (m) => esc(closeSaid(m.marker, dayOf(m.closedAt)));
+const closedState = (m) => escapeHtml(closeSaid(m.marker, dayOf(m.closedAt)));
 
 // Where an open version stands: planned, or ready to close; the current one's linked to the bar, whose line says who
 // closes it.
@@ -45,7 +45,7 @@ function sayBetCount(betCount, poolSize) {
 // The bets table, under a line saying how many of the open issues it draws from name a bet.
 export function renderBets(road) {
   if (!road.bets.length) return "";
-  const rows = road.bets.map((b) => `<tr><td>${issueTitleLink(b.issue)}</td><td>${inline(b.bet)}</td><td class="num">${esc(b.version || "no milestone yet")}</td></tr>`).join("");
+  const rows = road.bets.map((b) => `<tr><td>${issueTitleLink(b.issue)}</td><td>${inline(b.bet)}</td><td class="num">${escapeHtml(b.version || "no milestone yet")}</td></tr>`).join("");
   const says = `<p class="s">${sayBetCount(road.bets.length, road.betPoolSize)}</p>`;
   return `<h2>Bets the road rests on</h2>${says}<div class="scroll"><table><tr><th>Issue</th><th>The bet</th><th>Version</th></tr>${rows}</table></div>`;
 }

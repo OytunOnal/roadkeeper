@@ -2,11 +2,15 @@
 // Roadkeeper — the declared structure: docs/roadkeeper/dependency-rules.md and structure.json read into one model, and the
 // dependency rule judged on it.
 
-import { DATE, isCalendarDate, readerLines } from "../../_text.mjs";
-import { MAX_DEPTH, pathAndParents } from "./source-paths.mjs";
+import { pathAndParents } from "./path-match.mjs";
+import { readPurity } from "./inner-levels-pure.mjs";
+import { dependencyRules } from "./dependency-rules.mjs";
+import { parseJsonText } from "./parse-json-text.mjs";
+import { SHOWN, endsRead, shown, structurePath } from "./structure-path.mjs";
 
 // The declared structure, read into one model: docs/roadkeeper/dependency-rules.md, in the shape of its template in
-// skills/slice/references/structure.md, and docs/roadkeeper/structure.json, the stack tool's output. Its fields:
+// skills/slice/references/structure.md (dependency-rules.mjs), and docs/roadkeeper/structure.json, the stack tool's
+// output. Its fields:
 // - `rings`, the declared levels, innermost first, peers on one ring; `ringOf`, each level's ring;
 // - `declaredModules`, `exceptions`, `relations`, `tests` and `ignore`, as dependency-rules.md declares them; `mirrors`,
 //   its tests mirrors, each a tests folder and the code folder whose suites it holds at the same paths;
@@ -15,7 +19,8 @@ import { MAX_DEPTH, pathAndParents } from "./source-paths.mjs";
 // - `loose`, the files no module holds; `edges`, each with its two ends' modules and levels and whether an end is loose;
 // - `declarations`; `levels`, the files' own tags; `fileLevels`, the level of every file the model knows; `mixed`, each
 //   file of mixed levels with its levels, innermost first, counted everywhere else as its outermost;
-// - `digest`; `malformed`, what cannot be read, never dropped.
+// - `digest`; `impure` and `impureBaseline`, the inner-level Python files' breaches of purity and the files kept as
+//   their baseline (inner-levels-pure.mjs); `malformed`, what cannot be read, never dropped.
 // A file's level is its own tag, a root file's the level listed with it, else none: a private file, like a file no
 // module holds, takes no level from an entry (ADR 0005). The Architecture tab and the structure checks read this one
 // model. Both files are the repository's: every line shape is split by hand or by a regex anchored on fixed characters,
@@ -23,303 +28,284 @@ import { MAX_DEPTH, pathAndParents } from "./source-paths.mjs";
 
 // the four kinds of edge a tool can see
 export const EDGE_KINDS = ["dependency", "type-only", "implements", "inheritance"];
-const RELATION_KINDS = ["association", "aggregation", "composition"];
-// one case, so `Domain` and `domain` are never two levels; no space or `|`, which split a ring; a name, not a text, so
-// at most 64 characters
-export const LEVEL_NAME = /^[a-z][a-z0-9-]{0,63}$/;
-const NUMBERED = /^\s*\d+\./;
-const SEPARATOR = /\s[—–-]\s/;
-// the arrow between two quoted paths, as a line writes it: `→` or `->`
-export const ARROW = String.raw`\s*(?:→|->)\s*`;
-const EDGE_EXCEPTION_LINE = new RegExp(String.raw`^-\s+\x60([^\x60]+)\x60${ARROW}\x60([^\x60]+)\x60\s+[—–-]\s+(.+)$`);
-// an exception naming one path, a file or a module's folder: its own rulings allowed until the review point
-const PATH_EXCEPTION_LINE = /^-\s+\x60([^\x60]+)\x60\s+[—–-]\s+(.+)$/;
-const RELATION_LINE = new RegExp(String.raw`^-\s+([a-z]+):\s+\x60([^\x60]+)\x60${ARROW}\x60([^\x60]+)\x60\s*$`);
-// an exception's review point: a day, or the version by whose stamp it is resolved
-const REVIEW_POINT = /\((\d{4}-\d{2}-\d{2}|v\d+(?:\.\d+){0,3})\)$/;
-// a test pattern: a path with `*` (within a folder) and `**` (across folders), nothing else special; a few segments and
-// a few stars, so matching it against a path has a small fixed cost
-const TEST_PATTERN = /^[A-Za-z0-9_.*-]+(?:\/[A-Za-z0-9_.*-]+)*$/;
-const TEST_SEGMENTS = 16, TEST_STARS = 8;
-// a tests mirror: `- \`tests/\` mirrors \`scripts/\``, a tests folder holding a code folder's suites at the same paths
-const MIRROR_LINE = /^-\s+\x60([^\x60*]{1,200})\x60\s+mirrors\s+\x60([^\x60*]{1,200})\x60\s*$/;
-// a project has a code folder or two; past this many a mirror line is unread, so the rulings' lookup stays small
-const MAX_MIRRORS = 8;
-// a project ignores a few build outputs: past MAX_IGNORE a line is unread, so the walk's matching stays bounded
-export const MAX_IGNORE = 20;
-// a `## Modules` line, `- \`folder\`` or `- \`folder/*\``; a one-line comment, as the reference's template keeps under
-// each heading, is no line
-const MODULE_LINE = /^-\s+\x60([^\x60]{1,1024})\x60\s*$/;
-const COMMENT_LINE = /^<!--.*-->$/;
-// a project declares tens of modules; past this many a line is unread, so a list cannot stall the walk
-const MAX_MODULES = 500;
+// the kinds of declaration a tool lists for a file
+export const DECL_KINDS = ["fn", "class", "const", "type", "other"];
 // the SHA-256 the stamp wrote over the modules' files, so a check can tell a graph older than its code
 const DIGEST = /^[0-9a-f]{64}$/;
-// a path is the repository's own, as the tools print it from the root: no leading `/`, no `.`/`..` or empty segment,
-// no colon (a drive or a scheme) and no space at either end
-const NOT_RELATIVE = /^(?:\/|\.\.?(?:\/|$))|\/\.\.?(?:\/|$)|\/\/|:|^\s|\s$/;
-// a path's depth is capped (MAX_DEPTH), and its length too: V8 hashes a string past 16 383 characters by its length
-// alone, so long paths collide in the owner lookup
-export const MAX_PATH = 1024;
-
-// a message quotes at most this much of the repository's text
-const SHOWN = 200;
 // a whole message, however many values it quotes
 const MESSAGE = 600;
-// levels are a handful of rings; past this many the line is unread, so a list of names cannot fill the page
-const MAX_RINGS = 32;
-// and a ring holds a few peers, so the levels a page carries stay bounded
-const MAX_PEERS = 8;
-// a value quoted in a message: its backticks become `'`, so every backtick pair in a message is the reader's own and
-// the repository's text is exactly what they hold
-const shown = (s) => { const t = String(s).replace(/`/g, "'"); return t.length > SHOWN ? t.slice(0, SHOWN) + "…" : t; };
 // the cap a structure file is read under
 export const STRUCTURE_CAP = 8 * 1024 * 1024;
-// the line a check or a plan prints when a structure file is not read: it judges nothing past it
-export const STRUCTURE_UNREAD = `unread    docs/roadkeeper/dependency-rules.md or structure.json is missing, a link, or over the ${STRUCTURE_CAP / 1024 / 1024} MB cap`;
-// a path from a structure file read as the reader reads it, for the stamp that writes structure.json back
-export const structurePath = (v) => pathOf(v);
-function pathOf(v) {
-  if (typeof v !== "string") return { path: null, why: "is not a string" };
-  let p = v.replace(/\\/g, "/");
-  let end = p.length;
-  while (end > 0 && p[end - 1] === "/") end--;
-  p = p.slice(0, end);
-  if (!p) return { path: null, why: "is empty" };
-  if (p.length > MAX_PATH) return { path: null, why: `\`${shown(p)}\` is longer than ${MAX_PATH} characters` };
-  if (NOT_RELATIVE.test(p)) return { path: null, why: `\`${shown(p)}\` is not a repository-relative path (forward slashes; no ., .. or empty segment; no colon; no space at either end)` };
-  if (p.split("/").length - 1 > MAX_DEPTH) return { path: null, why: `\`${shown(p)}\` is deeper than ${MAX_DEPTH} folders` };
-  return { path: p, why: null };
-}
+
+// a whole message is capped too: a line may quote several of the repository's values; a cut that leaves a quoted value
+// open closes it, so the repository's text is still inside a pair
+const cutMessage = (what) => { if (what.length <= MESSAGE) return what; const t = what.slice(0, MESSAGE) + "…"; return (t.split("`").length - 1) % 2 ? t + "`" : t; };
+// a level list's outermost level: its last
+const outermostOf = (list) => list[list.length - 1];
+
 export function structureModel(mdText, jsonText) {
-  // a whole message is capped too: a line may quote several of the repository's values; a cut that leaves a quoted
-  // value open closes it, so the repository's text is still inside a pair
-  const cut = (what) => { if (what.length <= MESSAGE) return what; const t = what.slice(0, MESSAGE) + "…"; return (t.split("`").length - 1) % 2 ? t + "`" : t; };
-  const malformed = [], bad = (where, what) => malformed.push({ where, what: cut(what) });
-  const rings = [], ringOf = new Map(), exceptions = [], relations = [], tests = [], mirrors = [], ignore = [], declaredModules = { folders: [], groups: [] };
-  const ends = (at, a, b, push) => {
-    const f = pathOf(a), t = pathOf(b);
-    if (f.why || t.why) return bad(at, `a path ${f.why || t.why}`);
-    push(f.path, t.path);
-  };
-  // an `## Exceptions` line, trimmed, at its line number: an edge's, or one path's for its own rulings
-  const exceptionLine = (at, line, n) => {
-    const m = EDGE_EXCEPTION_LINE.exec(line), pathLineMatch = m ? null : PATH_EXCEPTION_LINE.exec(line);
-    // the why is each shape's last group
-    const read = m || pathLineMatch, why = read ? read[read.length - 1].trim() : "", d = REVIEW_POINT.exec(why);
-    const isDay = d && DATE.test(d[1]);
-    if (!read || !d || (isDay && !isCalendarDate(d[1]))) return bad(at, "an exception line reads - `from` → `to` — why (YYYY-MM-DD or vX.Y.Z), or - `path` — why (…) for a file's or a module's own rulings; the day it is reviewed again or the version by whose stamp it is resolved");
-    const x = { why: why.slice(0, d.index).trim(), until: d[1], untilKind: isDay ? "date" : "version", line: n };
-    if (m) return ends(at, m[1], m[2], (from, to) => exceptions.push({ from, to, ...x }));
-    const p = pathOf(pathLineMatch[1]);
-    return p.why ? bad(at, `a path ${p.why}`) : exceptions.push({ path: p.path, from: null, to: null, ...x });
-  };
-  // a `## Tests` mirror line, matched: the tests folder and the code folder whose suites it holds at the same paths
-  const mirrorLine = (at, match) => {
-    if (mirrors.length >= MAX_MIRRORS) return bad(at, `more than ${MAX_MIRRORS} mirror lines: the line is not read`);
-    return ends(at, match[1], match[2], (testsFolder, codeFolder) => mirrors.push({ tests: testsFolder, code: codeFolder }));
-  };
-  let section = null;
-  readerLines(mdText).forEach((line, idx) => {
-    const at = `dependency-rules.md:${idx + 1}`;
-    if (/^##\s/.test(line)) { section = line.slice(2).trim().toLowerCase(); return; }
-    if (!line.trim()) return;
-    const mirror = section === "tests" ? MIRROR_LINE.exec(line.trim()) : null;
-    if (section === "levels" && NUMBERED.test(line)) {
-      const rest = line.replace(NUMBERED, ""), cut = rest.search(SEPARATOR);
-      const names = cut < 0 ? [] : rest.slice(0, cut).split("|").map((s) => s.trim());
-      if (!names.length || names.some((n) => !LEVEL_NAME.test(n))) return bad(at, "a level line reads `N. name | peer — what it holds`, names in lowercase letters, digits and -, at most 64 characters");
-      if (rings.length >= MAX_RINGS) return bad(at, `more than ${MAX_RINGS} rings: a ring this far out is not read`);
-      if (names.length > MAX_PEERS) return bad(at, `more than ${MAX_PEERS} levels on one ring: the line is not read`);
-      for (const n of names) if (ringOf.has(n)) bad(at, `level \`${shown(n)}\` declared twice`); else ringOf.set(n, rings.length);
-      rings.push(names);
-    } else if (section === "exceptions" && /^-\s/.test(line)) {
-      exceptionLine(at, line.trim(), idx + 1);
-    } else if (mirror) {
-      mirrorLine(at, mirror);
-    } else if ((section === "tests" || section === "ignore") && /^-\s/.test(line)) {
-      // `## Ignore` names files the digest leaves out — a build's output inside a module — in the same shape as tests
-      const m = /^-\s+\x60([^\x60]{1,200})\x60\s*$/.exec(line.trim());
-      const segs = m ? m[1].split("/") : [];
-      if (!m || !TEST_PATTERN.test(m[1]) || /(?:^|\/)\.\.?(?:\/|$)/.test(m[1]) || segs.length > TEST_SEGMENTS
-        || segs.some((g) => g !== "**" && g.includes("**")) || (m[1].match(/\*/g) || []).length > TEST_STARS) {
-        return bad(at, `${section === "tests" ? "a test" : "an ignore"} line reads - \`pattern\`, a path with * and ** (** a whole segment) and no . or .. segment, at most ${TEST_SEGMENTS} segments and ${TEST_STARS} stars${section === "tests" ? ", or - `tests/` mirrors `scripts/` for a tests folder holding a code folder's suites at the same paths" : ""}`);
-      }
-      if (section === "ignore" && ignore.length >= MAX_IGNORE) return bad(at, `more than ${MAX_IGNORE} ignore patterns: the line is not read`);
-      (section === "tests" ? tests : ignore).push(m[1]);
-    } else if (section === "modules" && !COMMENT_LINE.test(line.trim())) {
-      const m = MODULE_LINE.exec(line.trim()), group = m && m[1].endsWith("/*");
-      const p = m ? pathOf(group ? m[1].slice(0, -2) : m[1]) : { why: "is not in that shape" };
-      if (p.why) return bad(at, `a module line reads - \`folder\`, with /* after the folder for every folder directly under it; this one ${p.why}`);
-      if (declaredModules.folders.length + declaredModules.groups.length >= MAX_MODULES) return bad(at, `more than ${MAX_MODULES} module lines: the line is not read`);
-      (group ? declaredModules.groups : declaredModules.folders).push(p.path);
-    } else if (section === "relations" && /^-\s/.test(line)) {
-      const m = RELATION_LINE.exec(line.trim());
-      if (!m || !RELATION_KINDS.includes(m[1])) return bad(at, `a relation line reads - ${RELATION_KINDS.join(" | ")}: \`from\` → \`to\``);
-      ends(at, m[2], m[3], (from, to) => relations.push({ kind: m[1], from, to, line: idx + 1 }));
-    }
-  });
-  if (!rings.length) bad("dependency-rules.md", "no levels declared under `## Levels`");
-  const ringOfLevel = Object.assign(Object.create(null), Object.fromEntries(ringOf));
-  const order = new Map(rings.flat().map((n, i) => [n, i]));
+  const malformed = [], bad = (where, what) => malformed.push({ where, what: cutMessage(what) });
+  const rules = dependencyRules(mdText, bad);
+  const { rings, exceptions, relations, tests, mirrors, ignore, declaredModules } = rules;
+  const ringOfLevel = Object.assign(Object.create(null), Object.fromEntries(rules.ringOf));
+  const data = parseGraph(jsonText);
+  if (!data) {
+    bad("structure.json", "structure.json is not an object with `modules` and `edges` arrays");
+    return { rings, ringOf: ringOfLevel, declaredModules, modules: [], loose: [], edges: [], exceptions, relations, declarations: [], levels: [], fileLevels: Object.create(null), mixed: Object.create(null), tests, mirrors, ignore, digest: null, impure: [], impureBaseline: [], malformed };
+  }
+  const graph = new GraphReader(rules, bad);
+  data.modules.forEach((mod, i) => graph.readModule(mod, i));
+  graph.linkParents();
+  const ownedRelations = graph.withOwners(relations), ownedExceptions = graph.withOwners(exceptions);
+  graph.readLevels(data.levels);
+  const loose = graph.readLoose(data.loose);
+  graph.foldModuleLevels();
+  graph.knowFiles(loose);
+  const edges = graph.readEdges(data.edges);
+  const declarations = readDeclarations(data.declarations, bad);
+  const digest = readDigest(data.digest, bad);
+  const { modules, levels, fileLevels, mixedFiles } = graph;
+  return { rings, ringOf: ringOfLevel, declaredModules, modules, loose, edges, exceptions: ownedExceptions, relations: ownedRelations, declarations, levels, fileLevels, mixed: mixedFiles, tests, mirrors, ignore, digest, ...readPurity(data, bad, structurePath), malformed };
+}
+
+// structure.json's text parsed, or null when it is not an object with `modules` and `edges` arrays
+function parseGraph(jsonText) {
+  const data = parseJsonText(jsonText);
+  const isGraph = data && typeof data === "object" && Array.isArray(data.modules) && Array.isArray(data.edges);
+  return isGraph ? data : null;
+}
+
+// One pass over structure.json's modules, levels, loose files and edges against the declared levels: what each step
+// read so far, each module's root files with their levels, the files of mixed levels, and every file's level known.
+class GraphReader {
+  constructor({ rings, ringOf }, bad) {
+    this.ringOf = ringOf;
+    this.bad = bad;
+    this.order = new Map(rings.flat().map((n, i) => [n, i]));
+    this.modules = [];
+    this.byPath = new Map();
+    this.rootFileLevelsOf = new Map();
+    // the files whose tag names several levels, each with its levels
+    this.mixedFiles = Object.create(null);
+    this.entryLevel = new Map();
+    this.entryTag = new Map();
+    this.own = new Map();
+    this.tagged = new Map();
+    this.levels = [];
+    this.looseSet = new Set();
+    this.fileLevels = Object.create(null);
+  }
+
   // A tag's value: one level, or several split by spaces (a file of mixed levels), each declared: { list } innermost
   // first, each once, its last the outermost (of peers, the one declared later); or { why }.
-  const levelList = (v) => {
+  levelList(v) {
     if (typeof v !== "string") return { why: "a value that is not a name is not a declared level" };
-    const names = v.split(/\s+/).filter(Boolean), undeclared = names.find((n) => !ringOf.has(n));
+    const names = v.split(/\s+/).filter(Boolean), undeclared = names.find((n) => !this.ringOf.has(n));
     if (!names.length || undeclared !== undefined) return { why: `\`${shown(undeclared ?? v)}\` is not a declared level` };
-    return { list: [...new Set(names)].sort((a, b) => order.get(a) - order.get(b)) };
-  };
-  // a level list's outermost level: its last
-  const outermostOf = (list) => list[list.length - 1];
-  // the files whose tag names several levels, each with its levels
-  const mixedFiles = Object.create(null);
-  let data = null;
-  try { data = JSON.parse(String(jsonText || "").replace(/^\uFEFF/, "")); } catch { /* reported below */ }
-  if (!data || typeof data !== "object" || !Array.isArray(data.modules) || !Array.isArray(data.edges)) {
-    bad("structure.json", "structure.json is not an object with `modules` and `edges` arrays");
-    return { rings, ringOf: ringOfLevel, declaredModules, modules: [], loose: [], edges: [], exceptions, relations, declarations: [], levels: [], fileLevels: Object.create(null), mixed: mixedFiles, tests, mirrors, ignore, digest: null, malformed };
+    return { list: [...new Set(names)].sort((a, b) => this.order.get(a) - this.order.get(b)) };
   }
-  const modules = [], byPath = new Map(), rootFileLevelsOf = new Map();
-  data.modules.forEach((mod, i) => {
-    const at = `structure.json modules[${i}]`, { path, why } = pathOf(mod && mod.path);
-    if (why) return bad(at, `a module's path ${why}`);
-    if (byPath.has(path)) return bad(at, `module \`${shown(path)}\` listed twice`);
-    // the files at the module's root, each once
-    const rootFileLevels = [], listed = new Set();
-    for (const e of Array.isArray(mod.entries) ? mod.entries : []) {
-      const f = pathOf(e && e.file), level = e && typeof e.level === "string" ? e.level : null, read = levelList(level);
-      if (f.why) { bad(at, `a root file ${f.why}`); continue; }
-      if (listed.has(f.path)) continue;
-      listed.add(f.path);
-      // a tag naming several levels: the file's level is its outermost, its span all of them
-      rootFileLevels.push({ file: f.path, level: read.list ? outermostOf(read.list) : level, levels: read.list || (level ? [level] : []) });
-      if (read.list && read.list.length > 1) mixedFiles[f.path] = read.list;
-      if (!level && rootFileLevels.length === 1) bad(at, `\`${shown(f.path)}\` has no @level`);
-      else if (level && read.why) bad(at, `\`${shown(f.path)}\`: ${read.why}`);
-    }
-    if (!rootFileLevels.length) bad(at, `module \`${shown(path)}\` has no root file`);
+
+  // the module at `modules[i]`, read with its root files and its files
+  readModule(mod, i) {
+    const at = `structure.json modules[${i}]`, { path, why } = structurePath(mod && mod.path);
+    if (why) return this.bad(at, `a module's path ${why}`);
+    if (this.byPath.has(path)) return this.bad(at, `module \`${shown(path)}\` listed twice`);
+    const rootFileLevels = this.readRootFiles(mod, at);
+    if (!rootFileLevels.length) this.bad(at, `module \`${shown(path)}\` has no root file`);
     // seen from outside, a module has its entry's level; a private file names its own (ADR 0005). With several root files
     // none is the entry, and outside reaches each: the outermost of their levels, whichever is listed first
-    const rootLevels = rootFileLevels.map((r) => r.level).filter((l) => ringOf.has(l));
-    const level = rootLevels.length ? rootLevels.reduce((a, b) => (order.get(b) > order.get(a) ? b : a)) : null;
-    // every file of the module, when the tool lists them: the page's openness gauge and drill-down read it
-    let files = null;
-    if (Array.isArray(mod.files)) {
-      files = [];
-      for (const v of mod.files) { const f = pathOf(v); if (f.why) bad(at, `a file ${f.why}`); else files.push(f.path); }
-    }
-    const mod2 = {
-      path, level, ring: level !== null ? ringOf.get(level) : null, levels: [], rootFiles: rootFileLevels.map((r) => r.file), entry: rootFileLevels.length === 1 ? rootFileLevels[0].file : null, files, parent: null,
+    const rootLevels = rootFileLevels.map((r) => r.level).filter((l) => this.ringOf.has(l));
+    const level = rootLevels.length ? rootLevels.reduce((a, b) => (this.order.get(b) > this.order.get(a) ? b : a)) : null;
+    const files = this.readFileList(mod, at);
+    const module = {
+      path, level, ring: level !== null ? this.ringOf.get(level) : null, levels: [], rootFiles: rootFileLevels.map((r) => r.file), entry: rootFileLevels.length === 1 ? rootFileLevels[0].file : null, files, parent: null,
     };
-    modules.push(mod2); byPath.set(path, mod2); rootFileLevelsOf.set(mod2, rootFileLevels);
-  });
-  // the deepest module whose path is a whole-segment prefix: `src/order/line/x.ts` is in `src/order/line`, not `src/order`
-  const owner = (file, self) => {
-    for (const p of pathAndParents(file)) { const m = byPath.get(p); if (m && m !== self) return m; }
+    this.modules.push(module); this.byPath.set(path, module); this.rootFileLevelsOf.set(module, rootFileLevels);
     return null;
-  };
-  for (const m of modules) { const p = owner(m.path, m); m.parent = p ? p.path : null; }
-  // a declared line's ends resolve to modules here, where every reader finds them: the page and the checks never walk paths
-  for (const x of [...relations, ...exceptions]) if (!x.path) { x.fromModule = owner(x.from)?.path ?? null; x.toModule = owner(x.to)?.path ?? null; }
-  // a file's level: its own tag in `levels` (a file at a module's root has the level listed with it), else none
-  const entryLevel = new Map(), entryTag = new Map();
-  for (const [, rootFileLevels] of rootFileLevelsOf) for (const e of rootFileLevels) if (ringOf.has(e.level) && !entryLevel.has(e.file)) { entryLevel.set(e.file, e.level); entryTag.set(e.file, e.levels.join(" ")); }
-  const tagged = new Map(), levels = [], own = new Map([...rootFileLevelsOf].map(([m, rootFileLevels]) => [m, new Set(rootFileLevels.flatMap((e) => e.levels).filter((l) => ringOf.has(l)))]));
+  }
+
+  // the files at a module's root, each once, with its level and its span: a tag naming several levels makes the file's
+  // level its outermost, its span all of them
+  readRootFiles(mod, at) {
+    const rootFileLevels = [], listed = new Set();
+    for (const e of Array.isArray(mod.entries) ? mod.entries : []) {
+      const f = structurePath(e && e.file), level = e && typeof e.level === "string" ? e.level : null, read = this.levelList(level);
+      if (f.why) { this.bad(at, `a root file ${f.why}`); continue; }
+      if (listed.has(f.path)) continue;
+      listed.add(f.path);
+      rootFileLevels.push({ file: f.path, level: read.list ? outermostOf(read.list) : level, levels: read.list || (level ? [level] : []) });
+      if (read.list && read.list.length > 1) this.mixedFiles[f.path] = read.list;
+      if (!level && rootFileLevels.length === 1) this.bad(at, `\`${shown(f.path)}\` has no @level`);
+      else if (level && read.why) this.bad(at, `\`${shown(f.path)}\`: ${read.why}`);
+    }
+    return rootFileLevels;
+  }
+
+  // every file of the module, when the tool lists them: the page's openness gauge and drill-down read it; null when not
+  readFileList(mod, at) {
+    if (!Array.isArray(mod.files)) return null;
+    const files = [];
+    for (const v of mod.files) { const f = structurePath(v); if (f.why) this.bad(at, `a file ${f.why}`); else files.push(f.path); }
+    return files;
+  }
+
+  // the deepest module whose path is a whole-segment prefix: `src/order/line/x.ts` is in `src/order/line`, not `src/order`
+  owner(file, self) {
+    for (const p of pathAndParents(file)) { const m = this.byPath.get(p); if (m && m !== self) return m; }
+    return null;
+  }
+
+  // each module's parent, resolved here, where every reader finds it: the page and the checks never walk paths
+  linkParents() {
+    for (const m of this.modules) { const p = this.owner(m.path, m); m.parent = p ? p.path : null; }
+  }
+
+  // declared lines with their ends resolved to modules, as new lines; a line naming one path is kept as it is
+  withOwners(declaredLines) {
+    return declaredLines.map((line) => (line.path ? line
+      : { ...line, fromModule: this.owner(line.from)?.path ?? null, toModule: this.owner(line.to)?.path ?? null }));
+  }
+
+  // structure.json's `levels`, each file's own tag: a file's level is its tag (a file at a module's root has the level
+  // listed with it), else none
+  readLevels(lv) {
+    for (const [, rootFileLevels] of this.rootFileLevelsOf) for (const e of rootFileLevels) this.noteRootFile(e);
+    this.own = new Map([...this.rootFileLevelsOf].map(([m, rootFileLevels]) => [m, new Set(rootFileLevels.flatMap((e) => e.levels).filter((l) => this.ringOf.has(l)))]));
+    if (lv === undefined) return;
+    const at = "structure.json levels", keys = new Set();
+    const isFileMap = lv && typeof lv === "object" && !Array.isArray(lv);
+    if (!isFileMap) { this.bad(at, "`levels` is not an object of file → level"); return; }
+    const levelByFile = Object.assign(Object.create(null), lv);
+    for (const key of Object.keys(levelByFile)) {
+      const f = structurePath(key);
+      if (f.why) { this.bad(at, `a file ${f.why}`); continue; }
+      if (keys.has(f.path)) { this.bad(at, `\`${shown(f.path)}\`'s level listed twice`); continue; }
+      keys.add(f.path);
+      const why = this.tagFile(f.path, levelByFile[key]);
+      if (why) this.bad(at, why);
+    }
+  }
+
+  // a root file's level and tag, the first module listing it with a declared level
+  noteRootFile(e) {
+    if (!this.ringOf.has(e.level) || this.entryLevel.has(e.file)) return;
+    this.entryLevel.set(e.file, e.level);
+    this.entryTag.set(e.file, e.levels.join(" "));
+  }
+
   // one file's tag in `levels` taken: null, or why it does not read. A file of mixed levels counts as its outermost in
   // every ruling; its span is all of them
-  const tagFile = (file, value) => {
-    const read = levelList(value);
+  tagFile(file, value) {
+    const read = this.levelList(value);
     if (read.why) return `\`${shown(file)}\`: ${read.why}`;
-    const m = owner(file), entry = entryTag.get(file), tag = read.list.join(" "), outermost = outermostOf(read.list);
+    const m = this.owner(file), entry = this.entryTag.get(file), tag = read.list.join(" "), outermost = outermostOf(read.list);
     if (entry !== undefined && entry !== tag) return `\`${shown(file)}\`: its entry says \`${shown(entry)}\`, \`levels\` says \`${shown(tag)}\``;
-    tagged.set(file, outermost); levels.push({ file, level: outermost });
-    if (read.list.length > 1) mixedFiles[file] = read.list;
-    if (m) read.list.forEach((l) => own.get(m).add(l));
+    this.tagged.set(file, outermost); this.levels.push({ file, level: outermost });
+    if (read.list.length > 1) this.mixedFiles[file] = read.list;
+    if (m) read.list.forEach((l) => this.own.get(m).add(l));
     return null;
-  };
-  const lv = data.levels, levelByFile = Object.assign(Object.create(null), lv);
-  if (lv !== undefined) {
-    const at = "structure.json levels", keys = new Set();
-    if (!lv || typeof lv !== "object" || Array.isArray(lv)) bad(at, "`levels` is not an object of file → level");
-    else for (const key of Object.keys(levelByFile)) {
-      const f = pathOf(key);
-      if (f.why) { bad(at, `a file ${f.why}`); continue; }
-      if (keys.has(f.path)) { bad(at, `\`${shown(f.path)}\`'s level listed twice`); continue; }
-      keys.add(f.path);
-      const why = tagFile(f.path, levelByFile[key]);
-      if (why) bad(at, why);
+  }
+
+  // the files no module holds: the ones `loose` lists, and every one tagged; sorted
+  readLoose(looseValue) {
+    const listed = looseValue === undefined ? [] : looseValue;
+    if (!Array.isArray(listed)) this.bad("structure.json loose", "`loose` is not a list of the files no module holds");
+    else for (const v of listed) {
+      const f = structurePath(v), m = f.why ? null : this.owner(f.path);
+      if (f.why) this.bad("structure.json loose", `a file ${f.why}`);
+      else if (m) this.bad("structure.json loose", `\`${shown(f.path)}\` is in module \`${shown(m.path)}\`: \`loose\` lists the files no module holds`);
+      else this.looseSet.add(f.path);
+    }
+    for (const t of this.levels) if (!this.owner(t.file)) this.looseSet.add(t.file);
+    return [...this.looseSet].sort();
+  }
+
+  levelOf(file) {
+    return this.tagged.get(file) || this.entryLevel.get(file) || null;
+  }
+
+  // a module's levels are its own files' and its nested modules': children first, each folded into its parent
+  foldModuleLevels() {
+    for (const m of [...this.modules].sort((a, b) => b.path.split("/").length - a.path.split("/").length)) {
+      const span = this.own.get(m);
+      m.levels = [...span].sort((a, b) => this.order.get(a) - this.order.get(b));
+      if (m.parent) for (const l of span) this.own.get(this.byPath.get(m.parent)).add(l);
     }
   }
-  // the files no module holds: the ones listed, and every one tagged
-  const looseSet = new Set(), listed = data.loose === undefined ? [] : data.loose;
-  if (!Array.isArray(listed)) bad("structure.json loose", "`loose` is not a list of the files no module holds");
-  else for (const v of listed) {
-    const f = pathOf(v), m = f.why ? null : owner(f.path);
-    if (f.why) bad("structure.json loose", `a file ${f.why}`);
-    else if (m) bad("structure.json loose", `\`${shown(f.path)}\` is in module \`${shown(m.path)}\`: \`loose\` lists the files no module holds`);
-    else looseSet.add(f.path);
+
+  // a file the model knows — a module's, listed, an entry, tagged, an edge's end, or one of `loose` — with its resolved
+  // level, the first time it is met
+  know(file, m) {
+    const read = m || this.looseSet.has(file);
+    if (read && !(file in this.fileLevels)) this.fileLevels[file] = this.levelOf(file);
   }
-  for (const t of levels) if (!owner(t.file)) looseSet.add(t.file);
-  const loose = [...looseSet].sort();
-  const levelOf = (file) => tagged.get(file) || entryLevel.get(file) || null;
-  // a module's levels are its own files' and its nested modules': children first, each folded into its parent
-  for (const m of [...modules].sort((a, b) => b.path.split("/").length - a.path.split("/").length)) {
-    const span = own.get(m);
-    m.levels = [...span].sort((a, b) => order.get(a) - order.get(b));
-    if (m.parent) for (const l of span) own.get(byPath.get(m.parent)).add(l);
+
+  // every module's files, every tagged file and every loose one known
+  knowFiles(loose) {
+    for (const m of this.modules) { for (const f of m.rootFiles) this.know(f, m); for (const f of m.files || []) this.know(f, this.owner(f)); }
+    for (const t of this.levels) this.know(t.file, this.owner(t.file));
+    for (const f of loose) this.know(f, null);
   }
-  // every file the model knows — a module's, listed, an entry, tagged, an edge's end, or one of `loose` — with its
-  // resolved level
-  const fileLevels = Object.create(null);
-  const know = (file, m) => { const read = m || looseSet.has(file); if (read && !(file in fileLevels)) fileLevels[file] = levelOf(file); };
-  for (const m of modules) { for (const f of m.rootFiles) know(f, m); for (const f of m.files || []) know(f, owner(f)); }
-  for (const t of levels) know(t.file, owner(t.file));
-  for (const f of loose) know(f, null);
-  const edges = [];
-  data.edges.forEach((e, i) => {
-    const at = `structure.json edges[${i}]`, kind = e && e.kind;
-    if (typeof kind !== "string" || !EDGE_KINDS.includes(kind)) return bad(at, `an edge's kind is not one of ${EDGE_KINDS.join(", ")} (association, aggregation and composition are declared in dependency-rules.md)`);
-    ends(at, e.from, e.to, (from, to) => {
-      const f = owner(from), t = owner(to);
-      know(from, f); know(to, t);
-      edges.push({
-        from, to, kind, fromModule: f ? f.path : null, toModule: t ? t.path : null, fromLevel: levelOf(from), toLevel: levelOf(to),
-        fromLoose: !f && looseSet.has(from), toLoose: !t && looseSet.has(to),
+
+  // structure.json's edges, each with its two ends' modules and levels and whether an end is loose; its ends known
+  readEdges(list) {
+    const edges = [];
+    list.forEach((e, i) => {
+      const at = `structure.json edges[${i}]`, kind = e && e.kind;
+      if (typeof kind !== "string" || !EDGE_KINDS.includes(kind)) return this.bad(at, `an edge's kind is not one of ${EDGE_KINDS.join(", ")} (association, aggregation and composition are declared in dependency-rules.md)`);
+      const read = endsRead(e.from, e.to);
+      if (read.why) return this.bad(at, read.why);
+      const { from, to } = read, f = this.owner(from), t = this.owner(to);
+      this.know(from, f); this.know(to, t);
+      return edges.push({
+        from, to, kind, fromModule: f ? f.path : null, toModule: t ? t.path : null, fromLevel: this.levelOf(from), toLevel: this.levelOf(to),
+        fromLoose: !f && this.looseSet.has(from), toLoose: !t && this.looseSet.has(to),
       });
     });
-  });
-  // what each file declares, when the tool lists it: the cards show a module's exported names as its interface
-  const declarations = [], declared = new Set();
-  const decl = data.declarations, declarationsByFile = Object.assign(Object.create(null), decl);
-  if (decl !== undefined) {
-    if (!decl || typeof decl !== "object" || Array.isArray(decl)) bad("structure.json declarations", "`declarations` is not an object of file → list");
-    else for (const key of Object.keys(declarationsByFile)) {
-      const at = `structure.json declarations`, f = pathOf(key), list = declarationsByFile[key];
-      if (f.why) { bad(at, `a file ${f.why}`); continue; }
-      // two keys that read as one file (`a.ts`, `a.ts/`) are one file listed twice
-      if (declared.has(f.path)) { bad(at, `\`${shown(f.path)}\`'s declarations listed twice`); continue; }
-      declared.add(f.path);
-      if (!Array.isArray(list)) { bad(at, `\`${shown(f.path)}\`'s declarations are not a list`); continue; }
-      const decls = [];
-      for (const d of list) {
-        const name = d && d.name, kind = d && d.kind, exported = d && d.exported;
-        if (typeof name !== "string" || !name || name.length > SHOWN || !DECL_KINDS.includes(kind) || typeof exported !== "boolean") {
-          bad(at, `a declaration in \`${shown(f.path)}\` reads { name, kind: ${DECL_KINDS.join(" | ")}, exported: true | false }, the name at most ${SHOWN} characters`);
-          continue;
-        }
-        decls.push({ name, kind, exported });
-      }
-      declarations.push({ file: f.path, decls });
-    }
+    return edges;
   }
-  let digest = null;
-  if (data.digest !== undefined) {
-    if (typeof data.digest === "string" && DIGEST.test(data.digest)) digest = data.digest;
-    else bad("structure.json digest", "`digest` is the stamp's SHA-256 over the modules' files, 64 hex characters");
-  }
-  return { rings, ringOf: ringOfLevel, declaredModules, modules, loose, edges, exceptions, relations, declarations, levels, fileLevels, mixed: mixedFiles, tests, mirrors, ignore, digest, malformed };
 }
+
+// What each file declares, when the tool lists it: the cards show a module's exported names as its interface. [{ file,
+// decls }]; what does not read goes to `bad`.
+function readDeclarations(decl, bad) {
+  const declarations = [], declared = new Set(), at = "structure.json declarations";
+  if (decl === undefined) return declarations;
+  const isFileMap = decl && typeof decl === "object" && !Array.isArray(decl);
+  if (!isFileMap) { bad(at, "`declarations` is not an object of file → list"); return declarations; }
+  const declarationsByFile = Object.assign(Object.create(null), decl);
+  for (const key of Object.keys(declarationsByFile)) {
+    const f = structurePath(key), list = declarationsByFile[key];
+    if (f.why) { bad(at, `a file ${f.why}`); continue; }
+    // two keys that read as one file (`a.ts`, `a.ts/`) are one file listed twice
+    if (declared.has(f.path)) { bad(at, `\`${shown(f.path)}\`'s declarations listed twice`); continue; }
+    declared.add(f.path);
+    if (!Array.isArray(list)) { bad(at, `\`${shown(f.path)}\`'s declarations are not a list`); continue; }
+    declarations.push({ file: f.path, decls: readDecls(list, f.path, bad) });
+  }
+  return declarations;
+}
+
+// one file's declarations, each { name, kind, exported }; one that does not read goes to `bad`
+function readDecls(list, file, bad) {
+  const decls = [];
+  for (const d of list) {
+    const name = d && d.name, kind = d && d.kind, exported = d && d.exported;
+    const isDeclaration = typeof name === "string" && name && name.length <= SHOWN && DECL_KINDS.includes(kind) && typeof exported === "boolean";
+    if (isDeclaration) decls.push({ name, kind, exported });
+    else bad("structure.json declarations", `a declaration in \`${shown(file)}\` reads { name, kind: ${DECL_KINDS.join(" | ")}, exported: true | false }, the name at most ${SHOWN} characters`);
+  }
+  return decls;
+}
+
+// the stamp's digest, or null when structure.json has none; one that does not read goes to `bad`
+function readDigest(digest, bad) {
+  if (digest === undefined) return null;
+  if (typeof digest === "string" && DIGEST.test(digest)) return digest;
+  bad("structure.json digest", "`digest` is the stamp's SHA-256 over the modules' files, 64 hex characters");
+  return null;
+}
+
 // an edge's two ends, the model's or the check's, one record each: its file, the module holding it (null for none) and
 // whether it is one of the files no module holds
 export const edgeEnds = (e) => [
@@ -349,7 +335,6 @@ export function pairsOf(sm) {
 export const readsCode = (sm) => sm.modules.length > 0 || sm.loose.length > 0;
 // a level placed on its ring, as `outward` compares two: no ring when the level is none or undeclared
 export const placed = (sm, level) => ({ level, ring: level != null && level in sm.ringOf ? sm.ringOf[level] : null });
-export const DECL_KINDS = ["fn", "class", "const", "type", "other"];
 
 // outward: a dependency on an outer ring, or on another level of the same ring (levels sharing a ring never depend on
 // each other); null when either level is undeclared

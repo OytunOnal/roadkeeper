@@ -1,21 +1,24 @@
 #!/usr/bin/env node
 // @level main
-// Roadkeeper — the structure stamp, the last step of a project's structure command, run in the project root:
-// `node <roadkeeper>/scripts/structure-stamp.mjs`. It writes into structure.json each module's `files` and the
-// files no module holds (`loose`), read from disk, and the `digest` of their contents and of the test files outside the
-// modules, so structure-check.mjs can tell a graph older than its code (scripts/structure/, `stamp`).
+// Roadkeeper — the structure stamp, the last step of a project's structure command:
+// `node <roadkeeper>/scripts/structure-stamp.mjs [--root <path>]`, on the tree `--root` names, else the working directory.
+// It writes into structure.json each module's `files` and the files no module holds (`loose`), read from disk, and the
+// `digest` of their contents and of the test files outside the modules, so structure-check.mjs can tell a graph older
+// than its code (scripts/structure/, `stamp`).
 //
-// Writes: docs/roadkeeper/structure.json only, in place, keeping every other field — and only when no folder on the way to
-// it is a link. Runs no command and asks git nothing. Takes no argument: any prints the usage line and exits 2, writing
-// nothing. Exits 1, writing nothing, on any stop; each says why. Stops on docs/roadkeeper missing or a link, a structure.json
-// that is not an object with modules, and a disk-unread line. A stale or hard line never stops it.
+// Writes: the tree's docs/roadkeeper/structure.json only, in place, keeping every other field — and only when no folder on
+// the way to it is a link. Runs no command and asks git nothing. Any other argument, or a `--root` with no value, given
+// twice or naming no folder, prints the usage line and exits 2, writing nothing. Exits 1, writing nothing, on any stop;
+// each says why. Stops on docs/roadkeeper missing or a link, a structure.json that is not an object with modules, and a
+// disk-unread line. A stale or hard line never stops it.
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { rootOption } from "./_root-option.mjs";
 import { stamp } from "./structure/structure.mjs";
 
-if (process.argv.length > 2) { process.stdout.write("usage: structure-stamp.mjs\n"); process.exit(2); }
-const root = process.cwd();
+const { root, rest, refused } = rootOption(process.argv.slice(2));
+if (refused || rest.length > 0) { process.stdout.write("usage: structure-stamp.mjs [--root <path>]\n"); process.exit(2); }
 const say = (line) => { process.stdout.write(`structure-stamp: ${line}\n`); };
 const stamped = stamp(root);
 if (stamped.refused) {

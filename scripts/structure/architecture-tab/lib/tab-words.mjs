@@ -6,7 +6,7 @@
 // call (architecture-tab.mjs, ORIGINALS).
 
 import { plural } from "../../../_text.mjs";
-import { moduleCountWords } from "../../lib/module-records.mjs";
+import { moduleCountWords } from "../../lib/module-count-words.mjs";
 import { innerPastCount, mixedOf, rootFileCount, severalRootFiles } from "./tab-counts.mjs";
 import { drawsRed, MARK } from "./tab-data.mjs";
 

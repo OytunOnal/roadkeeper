@@ -1,4 +1,4 @@
-// @level domain
+// @level infrastructure
 // Roadkeeper — the test cases of a JUnit XML text: each <testcase>, with the names of the <testsuite> elements around it,
 // its name, classname and file attributes, its time attribute's seconds (null for none or a malformed one), and its
 // outcome: FAIL with a <failure> or <error> inside, else SKIP with a <skipped>, else PASS; a FAIL's detail is its failure's message, else its text, and its text is kept beside; a SKIP's

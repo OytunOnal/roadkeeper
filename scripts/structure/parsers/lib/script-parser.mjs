@@ -45,14 +45,14 @@ function entryOf(dir, sub = ".") {
 }
 
 // The script packages loaded from the folder `dir`: { packages }, or { stop } naming the install when either is
-// missing: the project installs both, pinned; a --packages folder, `given` as typed, pins them already, so `npm ci`
-// there. `borrow`, when given, runs first, the caller's: null, or its { stop }.
+// missing: the project installs both, pinned; a folder --packages or the commands file names, `given` as named, pins
+// them already, so `npm ci` there. `borrow`, when given, runs first, the caller's: null, or its { stop }.
 async function loadScriptPackages({ dir, given, borrow }) {
   const borrowed = borrow ? borrow() : null;
   if (borrowed) return borrowed;
   const cruiser = packageDir(dir, "dependency-cruiser"), tsDir = packageDir(dir, "typescript");
   const missing = [cruiser ? null : "dependency-cruiser", tsDir ? null : "typescript"].filter(Boolean).join(" and ");
-  if (missing && given) return { stop: `${missing} not installed in the --packages folder ${printable(given)}: run \`npm ci\` there` };
+  if (missing && given) return { stop: `${missing} not installed in ${printable(given)}: run \`npm ci\` there` };
   if (missing) return { stop: `${missing} not installed in the project: install both, pinned, with \`npm install --save-dev --save-exact dependency-cruiser typescript\`` };
   const { cruise } = await import(entryOf(cruiser));
   const { default: extractTSConfig } = await import(entryOf(cruiser, "./config-utl/extract-ts-config"));
@@ -65,7 +65,7 @@ async function loadScriptPackages({ dir, given, borrow }) {
 // the install when it is missing.
 async function astroCompiler(dir, given) {
   const found = packageDir(dir, ASTRO_COMPILER);
-  if (!found && given) return { stop: `${ASTRO_COMPILER} not installed in the --packages folder ${printable(given)}, and the project holds .astro files: run \`npm ci\` there` };
+  if (!found && given) return { stop: `${ASTRO_COMPILER} not installed in ${printable(given)}, and the project holds .astro files: run \`npm ci\` there` };
   if (!found) return { stop: `${ASTRO_COMPILER} not found in the project's node_modules, which holds .astro files: it comes with astro; install the project's packages` };
   return { compiler: await import(entryOf(found)), tool: `${ASTRO_COMPILER} ${manifest(found).version}` };
 }

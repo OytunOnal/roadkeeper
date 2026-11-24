@@ -1,5 +1,5 @@
-// @level domain
-// Roadkeeper — the shapes a project's JSON file is held to before its fields are kept: a plain object, and a path from
+// @level kernel
+// Roadkeeper — the shapes a parsed JSON value is held to before its fields are kept: a plain object, and a path from
 // the root that stays inside it.
 
 // Whether a parsed value is a plain object: not null, not an array.

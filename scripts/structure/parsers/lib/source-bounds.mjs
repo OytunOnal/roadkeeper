@@ -1,4 +1,4 @@
-// @level domain
+// @level infrastructure
 // Roadkeeper — the bounds on a source file the structure command reads, its size and its nesting, and the two stops naming
 // the file that passes one; every language's parser takes them from here.
 

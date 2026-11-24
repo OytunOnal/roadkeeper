@@ -5,10 +5,12 @@
 // headings, lists and inline spans is The Road's (../../lib/markdown-reading.mjs). The text is a stranger's: all
 // of it is escaped, a link keeps to the allow-listed schemes, and a mermaid fence loses its click lines, said.
 
-import { esc, fenceStep } from "../../../_text.mjs";
+import { fenceStep } from "../../../_text.mjs";
+import { escapeHtml } from "../../../_words.mjs";
 import { HEADING_LINE, INLINE_SPAN, LIST_ITEM, readListEntries } from "../../lib/markdown-reading.mjs";
 
-const MERMAID_KINDS = /^(flowchart|graph|stateDiagram(-v2)?|sequenceDiagram|classDiagram|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|quadrantChart|requirementDiagram|block-beta|sankey-beta|xychart-beta|C4Context)\b/;
+// the diagram kinds mermaid draws: a mermaid fence whose first line names none is shown as text
+const MERMAID_KINDS =/^(flowchart|graph|stateDiagram(-v2)?|sequenceDiagram|classDiagram|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|quadrantChart|requirementDiagram|block-beta|sankey-beta|xychart-beta|C4Context)\b/;
 
 // Inline: code, bold, italic, links, bare URLs. Everything else is literal, escaped text. With `links` false, a link
 // and a bare URL stay text, its label or the URL: for text inside a link of its own, where a link would nest.
@@ -17,20 +19,20 @@ export function inline(src, { links = true } = {}) {
   const re = new RegExp(INLINE_SPAN);
   let out = "", last = 0, m;
   while ((m = re.exec(text)) !== null) {
-    out += esc(text.slice(last, m.index));
+    out += escapeHtml(text.slice(last, m.index));
     last = m.index + m[0].length;
-    if (m[2] !== undefined) out += `<code>${esc(m[2])}</code>`;
-    else if (m[3] !== undefined) out += `<strong>${esc(m[3])}</strong>`;
-    else if (m[4] !== undefined) out += `<em>${esc(m[4])}</em>`;
-    else if (m[5] !== undefined) out += `<em>${esc(m[5])}</em>`;
-    else if (m[6] !== undefined) out += links ? link(m[7], m[6]) : esc(m[6]);
+    if (m[2] !== undefined) out += `<code>${escapeHtml(m[2])}</code>`;
+    else if (m[3] !== undefined) out += `<strong>${escapeHtml(m[3])}</strong>`;
+    else if (m[4] !== undefined) out += `<em>${escapeHtml(m[4])}</em>`;
+    else if (m[5] !== undefined) out += `<em>${escapeHtml(m[5])}</em>`;
+    else if (m[6] !== undefined) out += links ? link(m[7], m[6]) : escapeHtml(m[6]);
     else if (m[8] !== undefined) {
       const url = trimBareUrl(m[8]);
-      out += links ? link(url, url) : esc(url);
+      out += links ? link(url, url) : escapeHtml(url);
       last = re.lastIndex = m.index + url.length; // what the link left is read again as text
     }
   }
-  return out + esc(text.slice(last));
+  return out + escapeHtml(text.slice(last));
 }
 
 // A bare URL ends as GitHub's autolinks do: trailing punctuation and quotes stay outside it, and a trailing `)`
@@ -50,8 +52,8 @@ function trimBareUrl(url) {
 
 function link(href, label) {
   const h = String(href || "");
-  if (!/^(https?:\/\/|mailto:|\.{0,2}\/|#)/i.test(h)) return esc(label); // anything else stays literal text
-  return `<a href="${esc(h)}" rel="noopener">${esc(label)}</a>`;
+  if (!/^(https?:\/\/|mailto:|\.{0,2}\/|#)/i.test(h)) return escapeHtml(label); // anything else stays literal text
+  return `<a href="${escapeHtml(h)}" rel="noopener">${escapeHtml(label)}</a>`;
 }
 
 // A mermaid `click` directive makes a node open a URL or call a function in the viewer's page.
@@ -72,10 +74,10 @@ function fence(lang, raw) {
   if (/^mermaid$/i.test(lang || "")) {
     const { body, removed } = stripClickLines(raw);
     const first = body.split("\n").map((l) => l.trim()).find((l) => l && !l.startsWith("%%")) || "";
-    if (MERMAID_KINDS.test(first)) return `<pre class="mermaid">${esc(body)}</pre>${clickNote(removed)}`;
-    return `<p class="note">This mermaid block does not start with a diagram kind, so it is shown as text.</p>\n<pre class="code"><code>${esc(body)}</code></pre>${clickNote(removed)}`;
+    if (MERMAID_KINDS.test(first)) return `<pre class="mermaid">${escapeHtml(body)}</pre>${clickNote(removed)}`;
+    return `<p class="note">This mermaid block does not start with a diagram kind, so it is shown as text.</p>\n<pre class="code"><code>${escapeHtml(body)}</code></pre>${clickNote(removed)}`;
   }
-  return `<pre class="code"><code>${esc(raw)}</code></pre>`;
+  return `<pre class="code"><code>${escapeHtml(raw)}</code></pre>`;
 }
 
 // The fence opening at line `from`, read as the plan reads fences, on the trimmed line; the language is the info
@@ -113,52 +115,47 @@ function parsedBlocks(text) {
   const out = [];
   let para = [];
   const flush = () => { if (para.length) { out.push(`<p>${inline(para.join(" "))}</p>`); para = []; } };
-
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    const block = fenceBlock(lines, i);
-    if (block) {
-      flush();
-      i = block.next;
-      out.push(block.html);
-      continue;
-    }
-    if (/^\s*$/.test(line)) { flush(); continue; }
-    const h = HEADING_LINE.exec(line);
-    if (h) {
-      flush();
-      out.push({ depth: h[1].length, html: inline(h[2].replace(/\s*#+\s*$/, "")) });
-      continue;
-    }
-    if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) { flush(); out.push('<hr>'); continue; }
-    if (/^\s*\|/.test(line)) {
-      flush();
-      const block = [];
-      while (i < lines.length && /^\s*\|/.test(lines[i])) block.push(lines[i++]);
-      i--;
-      out.push(mdTable(block));
-      continue;
-    }
-    if (/^\s*>/.test(line)) {
-      flush();
-      const block = [];
-      while (i < lines.length && /^\s*>/.test(lines[i])) block.push(lines[i++].replace(/^\s*>\s?/, ""));
-      i--;
-      out.push({ quote: parsedBlocks(block.join("\n")) });
-      continue;
-    }
-    const li = LIST_ITEM.exec(line);
-    if (li) {
-      flush();
-      const list = mdList(lines, i);
-      i = list.next;
-      out.push(list.html);
-      continue;
-    }
-    para.push(line.trim());
+    const read = readBlockAt(lines, i);
+    if (!read) { para.push(lines[i].trim()); continue; }
+    flush();
+    if (read.block !== null) out.push(read.block);
+    i = read.last;
   }
   flush();
   return out;
+}
+
+// The block starting at line `i`, parsedBlocks' shape, and the index of its last line: { block, last }, block null
+// for a blank line, which ends a paragraph; null when the line is a paragraph's.
+function readBlockAt(lines, i) {
+  const line = lines[i];
+  const fenced = fenceBlock(lines, i);
+  if (fenced) return { block: fenced.html, last: fenced.next };
+  if (/^\s*$/.test(line)) return { block: null, last: i };
+  const h = HEADING_LINE.exec(line);
+  if (h) return { block: { depth: h[1].length, html: inline(h[2].replace(/\s*#+\s*$/, "")) }, last: i };
+  if (/^\s*(---|\*\*\*|___)\s*$/.test(line)) return { block: "<hr>", last: i };
+  if (/^\s*\|/.test(line)) {
+    const rows = linesWhile(lines, i, /^\s*\|/);
+    return { block: mdTable(rows), last: i + rows.length - 1 };
+  }
+  if (/^\s*>/.test(line)) {
+    const quoted = linesWhile(lines, i, /^\s*>/);
+    return { block: { quote: parsedBlocks(quoted.map((l) => l.replace(/^\s*>\s?/, "")).join("\n")) }, last: i + quoted.length - 1 };
+  }
+  if (LIST_ITEM.exec(line)) {
+    const list = mdList(lines, i);
+    return { block: list.html, last: list.next };
+  }
+  return null;
+}
+
+// the run of lines from `from` that each match `pattern`
+function linesWhile(lines, from, pattern) {
+  let i = from;
+  while (i < lines.length && pattern.test(lines[i])) i++;
+  return lines.slice(from, i);
 }
 
 // every heading's `#` count in the blocks, a quote's included

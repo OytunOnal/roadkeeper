@@ -56,8 +56,13 @@ A slice that fits a single ticket, with no new screen, skips steps 1–6: commit
    - In a structured project, run `node ${CLAUDE_PLUGIN_ROOT}/scripts/structure-check.mjs --stamping <the milestone's version>` (`references/structure.md`, "At a milestone").
    - Spawn `architecture-reader`, with the check's output when there is one. It writes an HTML report and opens it.
    - The human picks which cards become issues (`road`, An issue's title, Summary and bet), with no milestone, each carrying its proposed fix, folded where they fit. A candidate that moves a module to another level, or adds or removes a level, needs an ADR before it joins a milestone.
-3. Close the milestone (the tracker doc's **Close a milestone**).
-4. **Release and re-plan** (`${CLAUDE_PLUGIN_ROOT}/skills/steward/references/versions.md`): its Release, then its re-plan.
+3. **Test sweep.**
+   - Spawn one `test-reader` per folder holding test files (the commands file's `tests` pattern), together, each with the project's root, its folder, and the cards' format that `node ${CLAUDE_PLUGIN_ROOT}/scripts/test-sweep.mjs --help` prints, pasted whole.
+   - Join their cards into one array in `.run/test-sweep/cards.json`. No card: say so in one line, and draw no page.
+   - Run `node ${CLAUDE_PLUGIN_ROOT}/scripts/test-sweep.mjs .run/test-sweep/cards.json` and open the page it prints. Each card shows the lines of code only its cases reached in the whole suite, or says why its code was not read for coverage. A stop's first line names its fix; a card's slip goes back to its reader.
+   - The human picks; the picked cards become one issue with no milestone (`road`, An issue's title, Summary and bet), placed at the re-plan.
+4. Close the milestone (the tracker doc's **Close a milestone**).
+5. **Release and re-plan** (`${CLAUDE_PLUGIN_ROOT}/skills/steward/references/versions.md`): its Release, then its re-plan.
 
 ## End
 

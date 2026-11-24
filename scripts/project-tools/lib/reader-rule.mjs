@@ -21,7 +21,8 @@
 // text is read once, linearly.
 
 import { escapeForPattern } from "../../_text.mjs";
-import { JS_TS, PYTHON, namingText } from "./naming-text.mjs";
+import { namingText } from "./naming-text.mjs";
+import { JS_TS, PYTHON } from "./source-lexing.mjs";
 import { WHOLE, codeReferences, helperBindings, namesReached, textOutsideImports, topLevelDefinitions, usesHelper }
   from "./top-level-definitions.mjs";
 
@@ -94,6 +95,21 @@ export function testHelpers(suites, edges) {
   } while (found.length);
   const isSuite = new Set(suites);
   return [...testSide].filter((f) => !isSuite.has(f));
+}
+
+// The test helpers of `helpers` (testHelpers') the files `from` import over `edges`, helpers of helpers included:
+// sorted by path.
+export function helpersReached(from, edges, helpers) {
+  const imports = adjacency(edges, ["from", "to"]);
+  const isHelper = new Set(helpers);
+  const reached = new Set();
+  const todo = [...from];
+  while (todo.length) {
+    for (const f of imports.get(todo.pop()) ?? []) {
+      if (isHelper.has(f) && !reached.has(f)) { reached.add(f); todo.push(f); }
+    }
+  }
+  return [...reached].sort();
 }
 
 // The top-level definitions of the files whose texts `texts` holds, each read once (topLevelDefinitions): a reader of

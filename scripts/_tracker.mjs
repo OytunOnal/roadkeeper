@@ -19,9 +19,9 @@ import { insideRoot, readPlainFile, replaceFile, recordsDir } from "./_files.mjs
 import { findProgram, mainCheckout } from "./_git.mjs";
 import { WAITING_LABEL, inFlightWaitingOnYou } from "./_milestones.mjs";
 import { cutAt, isCalendarDate } from "./_text.mjs";
-import { FAILURE_KIND } from "./_tracker-failure-kinds.mjs";
+import { FAILURE_KIND, isFailureKind } from "./_tracker-failure-kinds.mjs";
 
-export const SNAPSHOT = "docs/roadkeeper/issues.json";
+export const SNAPSHOT = "docs/roadkeeper/issues.json"; // the last read, in the records folder, for an offline draw
 const SNAPSHOT_CAP = 64 * 1024 * 1024; // bytes of a snapshot read back
 const GH_TIMEOUT = 60000;              // milliseconds one `gh` call may take
 // bounds on a stranger's tracker
@@ -59,19 +59,22 @@ const NO_ANSWER = /\bHTTP 5\d\d\b|error connecting to|dial tcp|no such host|conn
 // as gh's client ("HTTP 403: ...") and `gh api` ("gh: ... (HTTP 403)") print them; GraphQL's "API rate limit already
 // exceeded"; gh's own "GitHub API rate limit exceeded" and "rate limited"
 const RATE_LIMITED = /\bHTTP 429\b|\brate limit(?:ed)?\b/i;
+// what gh says when GitHub holds nothing at the address read
+const NOT_FOUND = /\bHTTP 404\b/;
 
 // The kind of a failed read (FAILURE_KIND): the kind an incomplete list was thrown with (incomplete); else, from what
 // `gh` threw, not signed in, gh missing (no program to run), out of time (the read stopped waiting: ETIMEDOUT, from its
-// own budget or a call's timeout), rate limited, no answer (a server's error answer, a failed connection, gh's own
-// timeout), or other.
-function classifyFailure(error) {
+// own budget or a call's timeout), rate limited, not found (a 404, only for a read naming one issue, the option
+// `namesIssue`), no answer (a server's error answer, a failed connection, gh's own timeout), or other.
+function classifyFailure(error, { namesIssue = false } = {}) {
   const thrown = error || {};
-  if (Object.values(FAILURE_KIND).includes(thrown.kind)) return thrown.kind;
+  if (isFailureKind(thrown.kind)) return thrown.kind;
   const said = `${thrown.stderr || ""}\n${thrown.message || ""}`;
   if (thrown.status === GH_AUTH_EXIT || SIGNED_OUT.test(said)) return FAILURE_KIND.notSignedIn;
   if (thrown.code === "ENOENT") return FAILURE_KIND.ghMissing;
   if (thrown.code === "ETIMEDOUT") return FAILURE_KIND.outOfTime;
   if (RATE_LIMITED.test(said)) return FAILURE_KIND.rateLimited;
+  if (namesIssue && NOT_FOUND.test(said)) return FAILURE_KIND.notFound;
   return NO_ANSWER.test(said) ? FAILURE_KIND.noAnswer : FAILURE_KIND.other;
 }
 
@@ -241,7 +244,7 @@ function cleanSnapshot(raw) {
     waitingSince: iso(i && i.waitingSince),
     closedAt: iso(i && i.closedAt),
     comments: list(i && i.comments).slice(-MAX_COMMENTS).map((c) => ({
-      author: str(c && c.author && typeof c.author === "object" ? c.author.login : c && c.author, 100),
+      author: str(readCommentAuthor(c), 100),
       body: str(c && c.body, MAX_COMMENT),
       createdAt: iso(c && c.createdAt),
     })).filter((c) => c.body),
@@ -255,6 +258,12 @@ function cleanSnapshot(raw) {
     closedAt: iso(m && (m.closed_at || m.closedAt)),
   })).filter((m) => m.number);
   return { fetched: iso(raw.fetched), repo: str(raw.repo, 200), url: httpUrl(raw.url), issues, milestones };
+}
+
+// a comment's author as gh writes it, an object with its login, or as a snapshot keeps it, the login alone
+function readCommentAuthor(comment) {
+  const hasAuthorObject = comment && comment.author && typeof comment.author === "object";
+  return hasAuthorObject ? comment.author.login : comment && comment.author;
 }
 
 // the snapshot file under `root`, cleaned, or null when there is none to read
@@ -286,9 +295,6 @@ export function newerReadOnDisk(root, snap) {
   return !thisRead || diskRead > thisRead;
 }
 
-// Which snapshot a read that is not live read, in the words a command prints.
-export const snapshotSource = (tracker) => (tracker.fromMainCheckout ? "the main checkout's snapshot" : "the snapshot");
-
 // The day Roadkeeper first saw each issue with no creation date: the previous snapshot's, or today. A dated issue has none.
 function stampSeen(snap, previous) {
   const before = new Map((previous ? previous.issues : []).map((i) => [i.number, i.seenAt]));
@@ -302,7 +308,7 @@ function stampSeen(snap, previous) {
 // failure, fromMainCheckout }, where error is `gh`'s own first line, failure its kind (classifyFailure), both null with no
 // failure, and fromMainCheckout says the snapshot read is the main checkout's. `run(args, root, left)` makes one gh call
 // and returns what it printed.
-export function readTracker(root, offline, budget = 4 * GH_TIMEOUT, run = gh) {
+export function readTracker(root, offline, { budget = 4 * GH_TIMEOUT, run = gh } = {}) {
   if (offline) return { ...readTreeSnapshot(root), live: false, error: null, failure: null };
   try {
     const snap = cleanAndStamp(root, fetchTracker(root, Date.now() + budget, run));
@@ -329,15 +335,26 @@ const liveResult = (snap) => ({ snap, live: true, error: null, failure: null, fr
 // a failed read's result, readTracker's shape: the tree's snapshot, `gh`'s first line and the failure's kind
 const failedResult = (root, e) => ({ ...readTreeSnapshot(root), live: false, error: ghError(e), failure: classifyFailure(e) });
 
+// the issue a REST path names (`issues/<N>/…`), or null
+const findPathIssueOrNull = (path) => {
+  const matched = /^issues\/(\d{1,9})\//.exec(path);
+  return matched ? Number(matched[1]) : null;
+};
+
 // A read of the repository's REST lists within `budget` milliseconds, for a command needing what the snapshot leaves
-// out (an issue's timeline): `list(path, cap, isEnough)`, startRead's `upTo` on `repos/<repository>/<path>`. Throws
-// an Error carrying `gh`'s own first line when `gh` fails.
+// out (an issue's timeline): `list(path, cap, isEnough)`, startRead's `upTo` on `repos/<repository>/<path>`. When `gh`
+// fails, throws an Error carrying `gh`'s own first line, its `kind` (classifyFailure) and `issue`, { number,
+// repository }, the issue a path read names, else null.
 export function openTrackerRead(root, budget, run = gh) {
-  const wrapFailure = (e) => Object.assign(new Error(ghError(e)), { kind: classifyFailure(e) });
+  const wrapFailure = (e, issue = null) =>
+    Object.assign(new Error(ghError(e)), { kind: classifyFailure(e, { namesIssue: issue !== null }), issue });
   let read;
   try { read = startRead(root, Date.now() + budget, run); } catch (e) { throw wrapFailure(e); }
   const list = (path, cap, isEnough) => {
-    try { return read.upTo(`repos/${read.name}/${path}`, cap, isEnough); } catch (e) { throw wrapFailure(e); }
+    try { return read.upTo(`repos/${read.name}/${path}`, cap, isEnough); } catch (e) {
+      const number = findPathIssueOrNull(path);
+      throw wrapFailure(e, number === null ? null : { number, repository: read.name });
+    }
   };
   return { list };
 }

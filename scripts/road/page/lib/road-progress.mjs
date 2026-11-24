@@ -1,7 +1,7 @@
 // @level presentation
 // Roadkeeper — The Road's progress groups: Done, Now, Next and Ahead along the rail, drawn from the road model
 // (../../lib/road-model.mjs), with no decisions of its own, an issue's Summary as The Road reads it
-// (../../lib/issue-body.mjs), in the words the page's parts share (road-words.mjs).
+// (../../lib/shown-summary.mjs), in the words the page's parts share (road-words.mjs).
 //
 // renderGroups(road, sizeStep) draws the four groups: Done, a group per closed milestone and then the issues closed
 // with no milestone; Now, the work in flight; Next, the rest of the current milestone; Ahead, a group per later
@@ -9,20 +9,22 @@
 //
 // Tracker text is a stranger's: every title and body is escaped.
 
-import { countInWords, esc, plural } from "../../../_text.mjs";
-import { onOneLine, shownSummaryOf, summaryOf } from "../../lib/issue-body.mjs";
+import { plural } from "../../../_text.mjs";
+import { countInWords, escapeHtml } from "../../../_words.mjs";
+import { onOneLine } from "../../lib/issue-body.mjs";
+import { shownSummaryOf, summaryOf } from "../../lib/shown-summary.mjs";
 import { dayOf } from "../../lib/road-model.mjs";
 import { inline, markdownSubset } from "./markdown-subset.mjs";
 import { closedLookOf, lookOf, lookWords, marker } from "./road-key.mjs";
-import { READY_TO_CLOSE_LINK, closeSaid, issueRef, issueTitleLink, longDate } from "./road-words.mjs";
+import { READY_TO_CLOSE_LINK, closeSaid, issueRef, issueTitleLink, longDate, milestoneHeading } from "./road-words.mjs";
 
 // Past MORE_AT characters an issue's summary shows two lines and a "more" control opens the rest.
 const MORE_AT = 140;
 
 // a marker's line: its version and `noteHtml`, its state's word as HTML
-const stamp = (plan, version, noteHtml) => `<li class="stamp${plan ? " plan" : ""}"><div class="when"></div>${marker("bar", plan ? "stamp plan" : "stamp")}<div class="v">${esc(version)}${noteHtml ? ` <small>${noteHtml}</small>` : ""}</div></li>`;
+const stamp = (plan, version, noteHtml) => `<li class="stamp${plan ? " plan" : ""}"><div class="when"></div>${marker("bar", plan ? "stamp plan" : "stamp")}<div class="v">${escapeHtml(version)}${noteHtml ? ` <small>${noteHtml}</small>` : ""}</div></li>`;
 
-const tag = (cls, label) => `<span class="tag${cls ? " " + cls : ""}">${esc(label)}</span>`;
+const tag = (cls, label) => `<span class="tag${cls ? " " + cls : ""}">${escapeHtml(label)}</span>`;
 
 // What "more" opens: the whole body, a spec's tickets and the comments. Empty when there is nothing past the summary,
 // or when the size step leaves detail out (the last attempt).
@@ -30,9 +32,10 @@ function issueDetail(i, sizeStep) {
   if (!sizeStep.detail) return "";
   const summary = summaryOf(i.body);
   const rest = onOneLine(i.body || "").length > summary.length;
-  if (!rest && !i.comments.length && !i.tickets.length && summary.length <= MORE_AT) return "";
+  const nothingPastSummary = !rest && !i.comments.length && !i.tickets.length && summary.length <= MORE_AT;
+  if (nothingPastSummary) return "";
   const tickets = i.tickets.map((t) => `<li>${issueRef(t)} ${inline(t.title)}</li>`).join("");
-  const comments = i.comments.map((c) => `<div class="comment"><p class="s">${esc(c.author || "someone")}${c.createdAt ? ` · ${esc(longDate(dayOf(c.createdAt)))}` : ""}</p>${markdownSubset(c.body, 5)}</div>`).join("");
+  const comments = i.comments.map((c) => `<div class="comment"><p class="s">${escapeHtml(c.author || "someone")}${c.createdAt ? ` · ${escapeHtml(longDate(dayOf(c.createdAt)))}` : ""}</p>${markdownSubset(c.body, 5)}</div>`).join("");
   return `<div class="full">${markdownSubset(i.body, 4)}${tickets ? `<h4 class="part">Tickets</h4><ul>${tickets}</ul>` : ""}${comments ? `<h4 class="part">Comments</h4>${comments}` : ""}</div>`;
 }
 
@@ -49,7 +52,7 @@ const refChips = (i) => [["specced from", i.from], ["real-use check", i.realUses
 // `text` escaped, each `#N` of `refs` (an issue's number and address) linked, any other `#N` left text.
 const withRefs = (text, refs) => text.split(/(#\d{1,9}\b)/).map((part, at) => {
   const ref = at % 2 ? refs.find((r) => `#${r.number}` === part) : null;
-  return ref ? issueRef(ref) : esc(part);
+  return ref ? issueRef(ref) : escapeHtml(part);
 }).join("");
 
 // The chip beside an issue's board chip while it wears waiting-on-you and names nothing else it waits on: "waits on
@@ -92,7 +95,7 @@ function issueSlice(i, look, sizeStep) {
 // without real-use check"; with one, that check's chip alone, its marker "closed".
 function issueNode(i, sizeStep, tagsVersion) {
   const closed = i.state === "CLOSED";
-  const whenHtml = closed && i.closedAt ? `closed on<br>${esc(longDate(dayOf(i.closedAt)))}` : "";
+  const whenHtml = closed && i.closedAt ? `closed on<br>${escapeHtml(longDate(dayOf(i.closedAt)))}` : "";
   const b = closed ? closedLookOf(i.board) : lookOf(i.board);
   if (closed && !b) {
     const shut = i.realUses.length ? { markerLook: "closed", tag: "" } : { tag: tag("", lookWords("shut")) };
@@ -103,13 +106,13 @@ function issueNode(i, sizeStep, tagsVersion) {
 
 // A milestone's stamp: its version and its marker's word, a closed one's with its close day, or `noteHtml` in its
 // place; its group's heading carries its name.
-const milestoneStamp = (m, noteHtml = esc(closeSaid(m.marker, dayOf(m.closedAt)))) => stamp(m.state !== "closed", m.version, noteHtml);
+const milestoneStamp = (m, noteHtml = escapeHtml(closeSaid(m.marker, dayOf(m.closedAt)))) => stamp(m.state !== "closed", m.version, noteHtml);
 
 // A row saying a group holds nothing: its words on the rail, no marker, which would read as an issue.
-const emptyRail = (text) => `<li class="slice"><div class="when"></div><div></div><div class="body"><h3>${esc(text)}</h3></div></li>`;
+const emptyRail = (text) => `<li class="slice"><div class="when"></div><div></div><div class="body"><h3>${escapeHtml(text)}</h3></div></li>`;
 
 // One group: `head` its id, its title, its count and whether it starts open; `inner` what it holds past its heading.
-const groupBox = (head, inner) => `<details class="group" id="${esc(head.id)}"${head.open === false ? "" : " open"}><summary><span class="t">${esc(head.title)}</span><span class="n">${esc(head.count)}</span></summary>${inner}</details>`;
+const groupBox = (head, inner) => `<details class="group" id="${escapeHtml(head.id)}"${head.open === false ? "" : " open"}><summary><span class="t">${escapeHtml(head.title)}</span><span class="n">${escapeHtml(head.count)}</span></summary>${inner}</details>`;
 
 // One group on the rail: its drawn list.
 const groupOf = (head, nodes) => groupBox(head, `<ol class="rail">${nodes}</ol>`);
@@ -118,7 +121,7 @@ const groupOf = (head, nodes) => groupBox(head, `<ol class="rail">${nodes}</ol>`
 // issues then its stamp. It starts collapsed.
 function groupInDone(g, sizeStep) {
   const m = g.milestone;
-  const head = { id: `done-${m.version}`, title: m.heading, count: `${m.closedAt ? `${closeSaid(m.marker, dayOf(m.closedAt))} · ` : ""}${countInWords(m.slices, "no slices", "slice")}`, open: false };
+  const head = { id: `done-${m.version}`, title: milestoneHeading(m), count: `${m.closedAt ? `${closeSaid(m.marker, dayOf(m.closedAt))} · ` : ""}${countInWords(m.slices, "no slices", "slice")}`, open: false };
   return groupOf(head, g.issues.map((i) => issueNode(i, sizeStep)).join("") + milestoneStamp(m));
 }
 
@@ -160,7 +163,7 @@ function renderNextGroup(road, sizeStep) {
   const empty = emptyRail(inFlight ? "All its issues are in Now." : "No issues on it yet.");
   const rows = issues.length ? issues.map((i) => issueNode(i, sizeStep)).join("") : empty;
   const nextStamp = m.readyToClose ? milestoneStamp(m, READY_TO_CLOSE_LINK) : milestoneStamp(m);
-  const title = m.readyToClose ? `Next — ${m.version} · ready to close` : `Next — ${m.heading}`;
+  const title = m.readyToClose ? `Next — ${m.version} · ready to close` : `Next — ${milestoneHeading(m)}`;
   return groupOf({ id: "next", title, count: countInWords(m.slices, "no slices", "slice") }, rows + nextStamp);
 }
 
@@ -168,7 +171,7 @@ function renderNextGroup(road, sizeStep) {
 // stamp. It starts open as the model draws it.
 function groupInAhead(a, sizeStep) {
   const m = a.milestone;
-  const head = { id: `ahead-${m.version}`, title: m.heading, count: countInWords(m.slices, "no slices", "slice"), open: a.open };
+  const head = { id: `ahead-${m.version}`, title: milestoneHeading(m), count: countInWords(m.slices, "no slices", "slice"), open: a.open };
   return groupOf(head, a.issues.map((i) => issueNode(i, sizeStep)).join("") + milestoneStamp(m));
 }
 

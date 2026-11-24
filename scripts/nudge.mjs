@@ -33,8 +33,10 @@ function main() {
   drawRoadAtHome(root, ROAD, { offline: true, timeout: DRAW_TIMEOUT });
 
   // with no snapshot the issues count none, and the due readings still count
-  const road = roadModel(root, snap || NO_ISSUES, todayLocal());
-  const { shown, given } = sessionLine(road, { live, snapshot: Boolean(snap), failure });
+  const today = todayLocal();
+  const road = roadModel(root, snap || NO_ISSUES, today);
+  // the snapshot's time as its file holds it, so the line names its day and age
+  const { shown, given } = sessionLine(road, { live, snapshot: snap && { fetched: snap.fetched }, failure, today });
   if (!shown) return;
   process.stdout.write(JSON.stringify({
     systemMessage: shown,

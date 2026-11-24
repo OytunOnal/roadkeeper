@@ -17,7 +17,7 @@
 
 import { todayLocal } from "./_clock.mjs";
 import { rootOption } from "./_root-option.mjs";
-import { VERSION_TOKEN } from "./_text.mjs";
+import { VERSION_TOKEN } from "./_versions.mjs";
 import { readTracker } from "./_tracker.mjs";
 import { report } from "./structure/structure.mjs";
 

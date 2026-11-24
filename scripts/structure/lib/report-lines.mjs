@@ -1,15 +1,26 @@
-// @level domain
+// @level presentation
 // Roadkeeper — the structure report's lines (GLOSSARY: Structure report): what the check prints, the lines the
 // Architecture tab opens on and the lines the disk gave, in the check's words. Pure: reportLines takes structureModel's
 // output (structure-model.mjs), the reader's facts about the disk (diskFacts, disk-facts.mjs), the rulings' check
 // (rulings.mjs) and the options it judged under, and returns the lines; diskLines, the disk's lines alone, for the
-// stamp. The callers read the files, the clock and the snapshot.
+// stamp. What is stale, the verdict and the tests taken are report-findings.mjs's. The callers read the files, the clock
+// and the snapshot.
 
 import { reviewPointDue } from "./review-points.mjs";
-import { grouped, printable, readerMessage } from "./printable.mjs";
-import { readsCode } from "./structure-model.mjs";
-import { codeFiles, moduleCountWords } from "./module-records.mjs";
-import { MAX_CYCLES, MAX_EXCEPTIONS, MAX_TESTS, testOf } from "./rulings.mjs";
+import { printable, readerMessage } from "./printable.mjs";
+import { GROUP, grouped } from "./cut-lines.mjs";
+import { STRUCTURE_CAP, readsCode } from "./structure-model.mjs";
+import { moduleCountWords } from "./module-count-words.mjs";
+import { MAX_CYCLES, MAX_EXCEPTIONS, MAX_TESTS } from "./rulings.mjs";
+import { staleFinding, testsTaken, verdictOf } from "./report-findings.mjs";
+import { RULE, purityRulings } from "./inner-levels-pure.mjs";
+import { plural } from "../../_text.mjs";
+
+// the line a check or a plan prints when a structure file is not read: it judges nothing past it
+export const STRUCTURE_UNREAD = `unread    docs/roadkeeper/dependency-rules.md or structure.json is missing, a link, or over the ${STRUCTURE_CAP / 1024 / 1024} MB cap`;
+
+// the first line of the purity refusal: the step that fixes it, the breaches under it
+const PURITY_STEP = `hard      ${RULE}  move each import and call below into an infrastructure or main file that hands its result in: a kernel, domain or application file does no I/O`;
 
 // the root files a root-files line names: enough to find the stray ones; past it they are counted
 const MAX_ROOT_FILES_NAMED = 20;
@@ -20,32 +31,28 @@ const ROOT_FILES_WORDS = { atRoot: "source files at its root", rule: "a deep mod
 const STAMP_SHOWN = 20;
 // the note a check that may go without the tracker snapshot prints in its place
 const UNJUDGED_NOTE = "note      no tracker snapshot read: version exceptions were not judged; run The Road";
-
-// How many module files the test patterns take out of the dependency rule, so a pattern that swallows the code is seen:
-// over `files`, the files on disk by module (the digest's walk), since structure.json's own lists are not in the
-// digest; without it over those lists. The check prints it through here.
-export function testsTaken(sm, files = null) {
-  const isTest = testOf(sm.tests);
-  let count = 0, tested = 0;
-  const lists = files ? [...files.values()] : sm.modules.map((m) => m.files || []);
-  // a module's code files only (SOURCE): a stylesheet or a data file is out of the rule without a pattern
-  for (const f of codeFiles(lists.flat()) || []) { count++; if (isTest(f)) tested++; }
-  return { files: count, tested };
-}
+// how a stale line ends: the step, where the project names the structure command
+const RESTAMP = "rerun the structure command your CODING_STANDARDS.md names under Commands";
+// what each judgement kind asks, said once above its lines
+const ASKS = {
+  "level-name": "a level is named like a module's folder, though levels are layers, not folders; the review keeps it or renames the level",
+  "cycle": "these modules reach each other round a loop; the review keeps it or cuts one of the two-way pairs under it",
+};
+const buildAsksLine = (kind) => `asks      ${kind} — ${ASKS[kind]}`;
 
 // The report's lines, in the check's words: { lines, atop, diskUnread, failed }.
-// - lines: what the check prints: hard, unread, notes, stale, judgements, cycles with their pairs, cyclesPast (the count
+// - lines: what the check prints: hard (the purity refusal first), unread, notes, stale, judgements, cycles with their pairs, cyclesPast (the count
 //   past MAX_CYCLES), debt, and under `stamping` coming and open; shallow; each group cut and the rest counted; then the
-//   tests and ignored lines, and the verdict;
-// - atop: the lines the Architecture tab opens on: the unread, the stale and the level-name judgements, each group cut
-//   as the check cuts it;
+//   tests and ignored lines, and the verdict: stale when the stale lines are all that fails;
+// - atop: the lines the Architecture tab opens on: the unread, the stale and the level-name judgements under their asks
+//   line, each group cut as the check cuts it;
 // - diskUnread: the lines the disk gave: a missing folder, the digest bound, a root file off the walk;
 // - failed: a hard, unread or stale line.
 // Paths print through printable, a reader's message through readerMessage: the lines reach agents.
 export function reportLines({ sm, facts }, check, judging) {
   const { snapshotOptional, stamping } = judging;
-  const { hard, judgements, levelNames } = violationLines(check.violations);
-  const { debt, coming } = debtLines(check.debt, stamping);
+  const purity = purityLines(sm), { judgements, levelNames, ...ruled } = violationLines(check.violations);
+  const owed = debtLines(check.debt, stamping), hard = [...purity.hard, ...ruled.hard], debt = [...owed.debt, ...purity.debt];
   // a version exception the disk was judged for and no snapshot read
   const unjudged = Boolean(facts) && !judging.snapshotRead && sm.exceptions.some((x) => x.untilKind === "version");
   const d = diskLines(sm, facts), unread = [...modelUnread(sm, check, unjudged && !snapshotOptional), ...d.unread];
@@ -53,24 +60,34 @@ export function reportLines({ sm, facts }, check, judging) {
     hard, unread, notes: unjudged && snapshotOptional ? [UNJUDGED_NOTE] : [], stale: d.stale, judgements, cycles: cycleLines(check.violations),
     // the groups past MAX_CYCLES, counted on a line of their own
     cyclesPast: check.cycles.more ? [`judgement cycle  ${check.cycles.more} more cycles past the first ${MAX_CYCLES}`] : [],
-    debt, coming, open: stamping === null ? [] : openLines(check.modules),
+    debt, coming: owed.coming, open: stamping === null ? [] : openLines(check.modules),
     // past the digest bound the files are not compared, so none is said shallow
     shallow: facts && !facts.digest ? [] : shallowLines(check.modules), tests: d.tests, ignored: d.ignored,
   };
-  const failed = [hard, unread, d.stale].some((g) => g.length > 0);
-  const atop = [...grouped(unread), ...d.stale, ...grouped(levelNames)];
-  return { lines: printed(groups, stamping, failed), atop, diskUnread: d.disk, failed };
+  const verdict = verdictOf({ hard: hard.length > 0, unread: unread.length > 0, stale: d.stale.length > 0 });
+  const atop = [...grouped(unread), ...d.stale, ...placeAsksLines(levelNames)];
+  return { lines: printed(groups, stamping, `structure: ${verdict}`), atop, diskUnread: d.disk, failed: verdict !== "clean" };
+}
+
+// Judgement lines, each { kind, line }, a kind's lines together in the order the kinds come, each kind's first line
+// under its asks line; the judgement lines cut at `cap` and the rest counted, the asks lines not counted.
+function placeAsksLines(judgements, cap = GROUP) {
+  const kinds = [...new Set(judgements.map((j) => j.kind))];
+  const ordered = kinds.flatMap((k) => judgements.filter((j) => j.kind === k));
+  const firstOfKind = (i) => i < cap && i < ordered.length && (i === 0 || ordered[i].kind !== ordered[i - 1].kind);
+  return grouped(ordered.map((j) => j.line), cap).flatMap((line, i) => firstOfKind(i) ? [buildAsksLine(ordered[i].kind), line] : [line]);
 }
 
 // What the check prints: each group cut, at STAMP_SHOWN under a stamp, and the rest counted (the unread and stale lines
-// never cut by a stamp); the cycles after the judgements, a group of their own; the shallow? advisories; the tests and
-// ignored counts; the verdict.
-function printed(g, stamping, failed) {
+// never cut by a stamp); the judgements under their asks lines; the cycles after them, a group of their own under the
+// cycle's asks line; the shallow? advisories; the tests and ignored counts; the verdict.
+function printed(g, stamping, verdictLine) {
   const cap = stamping === null ? undefined : STAMP_SHOWN;
-  const lines = [...grouped(g.hard, cap), ...grouped(g.unread), ...g.notes, ...g.stale, ...grouped(g.judgements, cap), ...grouped(g.cycles, cap), ...g.cyclesPast,
+  const cycles = g.cycles.length ? [buildAsksLine("cycle"), ...grouped(g.cycles, cap)] : [];
+  const lines = [...grouped(g.hard, cap), ...grouped(g.unread), ...g.notes, ...g.stale, ...placeAsksLines(g.judgements, cap), ...cycles, ...g.cyclesPast,
     ...grouped(g.debt, cap), ...grouped(g.coming, cap), ...grouped(g.open, cap), ...grouped(g.shallow, cap)];
   for (const l of [g.tests, g.ignored]) if (l) lines.push(l);
-  lines.push(failed ? "structure: violations" : "structure: clean");
+  lines.push(verdictLine);
   return lines;
 }
 
@@ -88,17 +105,31 @@ function modelUnread(sm, check, unjudged) {
 }
 
 // Each violation but a cycle as a line, hard or judgement: a module's root files, a file without its level, a module
-// without one, else an edge's ends; a due exception named. The level-name judgements also apart, for the tab.
+// without one, else an edge's ends; a due exception named. A judgement as { kind, line }; the level-name judgements
+// also apart, for the tab.
 function violationLines(violations) {
   const hard = [], judgements = [], levelNames = [];
   for (const v of violations) {
     if (v.kind === "cycle") continue;
     const due = v.exception ? ` — exception (dependency-rules.md:${v.exception.line}, ${printable(v.exception.until)}) is due` : "";
     const line = `${v.grade.padEnd(9)} ${v.kind}  ${describeWhere(v)}${due}`;
-    (v.grade === "hard" ? hard : judgements).push(line);
-    if (v.kind === "level-name") levelNames.push(line);
+    if (v.grade === "hard") hard.push(line);
+    else judgements.push({ kind: v.kind, line });
+    if (v.kind === "level-name") levelNames.push({ kind: v.kind, line });
   }
   return { hard, judgements, levelNames };
+}
+
+// The purity rulings' lines (inner-levels-pure.mjs): { hard, debt }. Hard: with a breach outside the baseline, the
+// line saying the step, then each breach, its file, line and what it imports or calls; debt: each baselined file
+// with its count of breaches.
+function purityLines(sm) {
+  const { refused, kept } = purityRulings(sm);
+  const found = refused.map((b) => `          ${RULE}  ${printable(b.file)}:${b.line} ${b.uses} ${printable(b.name)}`);
+  return {
+    hard: found.length ? [PURITY_STEP, ...found] : [],
+    debt: kept.map((k) => `debt      ${RULE}  ${printable(k.file)} — ${plural(k.count, "breach", "breaches")} kept in structure.json's impureBaseline until fixed`),
+  };
 }
 
 // a module with several root files: each named from the module's folder, the first MAX_ROOT_FILES_NAMED and the rest
@@ -183,13 +214,15 @@ export function diskLines(sm, facts) {
   return out;
 }
 
-// The one stale line, or null: no digest stamped, another digest, then a module's files list, then the files no module
-// holds. Past the digest bound nothing is compared: the bound is an unread line.
+// what each stale finding (report-findings.mjs, staleFinding) says, before the step
+const STALE_WORDS = {
+  unstamped: () => "structure.json carries no digest",
+  digest: () => "the files are not the ones structure.json was stamped from",
+  module: (f) => `module ${printable(f.path)} lists other files than its folder holds`,
+  loose: () => "structure.json lists other files no module holds than the disk has",
+};
+// The one stale line, or null: the stale finding said, then the step.
 function staleLine(sm, facts, onDisk) {
-  if (!sm.digest) return "stale     structure.json carries no digest: rerun the structure command";
-  if (!facts.digest) return null;
-  if (facts.digest !== sm.digest) return "stale     the files are not the ones structure.json was stamped from: rerun the structure command";
-  const differs = sm.modules.find((m) => (m.files || []).join("\n") !== (onDisk.get(m.path) || []).join("\n"));
-  if (differs) return `stale     module ${printable(differs.path)} lists other files than its folder holds: rerun the structure command`;
-  return sm.loose.join("\n") !== facts.loose.join("\n") ? "stale     structure.json lists other files no module holds than the disk has: rerun the structure command" : null;
+  const found = staleFinding(sm, facts, onDisk);
+  return found ? `stale     ${STALE_WORDS[found.kind](found)}: ${RESTAMP}` : null;
 }

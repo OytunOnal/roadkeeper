@@ -1,5 +1,6 @@
-// @level domain
-// Roadkeeper — one run's test runs from its transcript's entries in the slice window: each a call running the
+// @level infrastructure
+// Roadkeeper — one run's test runs from its transcript's entries in the slice window: each a call whose shell command
+// line runs the
 // project's tests, ended as command-runs.mjs ends a call. A command runs them when one of its steps runs
 // reader-tests.mjs with --run, red-before.mjs or same-cases.mjs, or runs a test file by name with the program the
 // project's commands file runs its tests with.
@@ -38,7 +39,7 @@ export function runsTests(command, testCommand) {
     .some((words) => runsTestTool(words) || runsTestFile(words, testCommand));
 }
 
-// The test runs of a run whose `entries` ({ entry, time }, in the file's order) fall in the window, in the order they
+// The test runs of a run whose `entries` (read-entry-facts.mjs's facts, in the file's order) fall in the window, in the order they
 // were called: each { started, seconds, outcome }, seconds and outcome null when no end is seen.
 export const findTestRuns = (entries, testCommand) => findCommandRuns(entries, (command) => runsTests(command, testCommand))
   .map(({ started, seconds, outcome }) => ({ started, seconds, outcome }));

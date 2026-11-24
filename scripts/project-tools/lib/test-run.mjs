@@ -7,29 +7,34 @@
 // argument; `{out}`, anywhere in an argument, a results file in the caller's folder. A run no case is read from is
 // said, with why and its last lines. The green's `{tests}` step runs every test file of the worktree so, in place, and
 // says only the failed cases, a total line and its slowest test files with their seconds: a run of one file's own, else
-// its cases' times summed from the results; the green's doc tests run the same way, alone.
+// its cases' times summed from the results; the green's doc tests run the same way, alone. The test sweep runs one
+// test file at a time, whole by `runTests` or by `runCases` with only the cases it keeps: there an argument holding
+// `{case}` is repeated once per kept case, `{case}` its id.
 
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { availableParallelism, tmpdir } from "node:os";
 import { join } from "node:path";
-import { formatSlowestLines, SLOWEST_MAX, TESTS_LABEL } from "../../_slowest-lines.mjs";
+import { pathFrom } from "../../_files.mjs";
+import { SLOWEST_MAX, TESTS_LABEL } from "../../_slowest-lines.mjs";
 import { plural } from "../../_text.mjs";
 import { adapterOf } from "../adapters/adapters.mjs";
-import { crashedFiles, listedByFile, unknownMarked } from "./case-outcomes.mjs";
+import { crashedFiles, unknownMarked } from "./case-outcomes.mjs";
 import { commandEnv, runCommandWithin, testRunLimit } from "./command-run.mjs";
-import { COMMANDS_FILE, readCommands } from "./commands-file.mjs";
+import { COMMANDS_FILE } from "./commands-fields.mjs";
+import { readCommands } from "./commands-file.mjs";
 import { workingFile, workingFiles } from "./commit-tree.mjs";
-import { firstRedStep, tailLines } from "./steps-run.mjs";
+import { shownName } from "./shown-name.mjs";
+import { tailLines } from "./tail-lines.mjs";
+import { firstRedStep } from "./steps-run.mjs";
 import { worktreeInstall, worktreeRoot } from "./worktree.mjs";
 
 const FILES = "{files}"; // runTests' argument the test files take the place of
 const OUT = "{out}";     // runTests' text a results file's path takes the place of
+const CASE = "{case}";   // runCases' text a kept case's id takes the place of, its argument repeated for each
 const WORKERS = availableParallelism(); // runs side by side: one per processor
+const WILDCARD = /[*?[{]/; // a pattern part holding one names no fixed folder
+const INSTALLED = new Set(["node_modules", "site-packages", "dist-packages"]); // a folder of installed packages: no project code
 const NOT_FAILED = new Set(["PASS", "SKIP"]); // the outcomes the `{tests}` step does not list: a skipped case is no failure
-const OWN_SAID = "each its run's seconds"; // the slowest files' seconds, each a run's own
-const SUMMED_SAID = "each its cases' times summed, a file's load time left out"; // each its cases' times summed
-// some a run's own, some its cases' times summed
-const MIXED_SAID = "each its run's seconds when it ran alone, else its cases' times summed, a file's load time left out";
 
 // The test files' patterns of a project's `commands` (the commands file's, read): its `tests`, else its stack adapter's.
 const testPatterns =(commands) => (commands.tests ? [commands.tests] : adapterOf(commands.stack).tests);
@@ -42,12 +47,15 @@ export function testFileMatcher(commands, matches) {
 }
 
 // The project's tests at the worktree holding `dir`, ready to run by name, its install linked in when it is a linked
-// worktree with none (worktree.mjs): { root, installFrom, said, commands, adapter, patternsLine, isTest, isRunList },
-// `installFrom` the checkout whose install a tree laid out for it links (null: none), `said` the line saying why none is
-// linked or null, `patternsLine` the test files' patterns (testPatterns) as a line says them, `isTest(path)` whether
-// `matches` reads the path as matching one of them, `isRunList(path)` whether one of the commands file's `runLists`
-// patterns names it (null when it declares none); or { refused }, the line saying why not.
-export function testSetup({ dir, matches }) {
+// worktree with none (worktree.mjs): { root, installFrom, said, commands, adapter, patternsLine, isTest, isRunList,
+// words }, `installFrom` the checkout whose install a tree laid out for it links (null: none), `said` the line saying
+// why none is linked or null, `patternsLine` the test files' patterns (testPatterns) as a line says them, `isTest(path)`
+// whether `matches` reads the path as matching one of them, `isRunList(path)` whether one of the commands file's
+// `runLists` patterns names it (null when it declares none), `words` the lines the runs say, as the entry hands them
+// in: { counted, listedByFile, differenceLines }, the cases' (case-outcome-lines.mjs), { passLine, failLines }, the
+// steps' (step-lines.mjs), { totalLine, slowestLines }, the `{tests}` step's (test-run-lines.mjs); or { refused }, the
+// line saying why not.
+export function testSetup({ dir, matches, words }) {
   const root = worktreeRoot(dir);
   if (!root) return { refused: "not in a git repository" };
   const { commands, refused } = readCommands(root);
@@ -59,7 +67,19 @@ export function testSetup({ dir, matches }) {
   const [patternsLine, isTest] = [testPatterns(commands).join(" or "), testFileMatcher(commands, matches)];
   const runLists = commands.runLists ?? [];
   const isRunList = runLists.length ? (path) => runLists.some((pattern) => matches(pattern, path)) : null;
-  return { root, installFrom: from, said: said ?? null, commands, adapter, patternsLine, isTest, isRunList };
+  return { root, installFrom: from, said: said ?? null, commands, adapter, patternsLine, isTest, isRunList, words };
+}
+
+// The named files `named`, by their paths from the root, split by the test files' pattern of `setup` (testSetup's):
+// { tests, notTests, fault }, `fault` the fault's lines, its step first, each starting with `label`, when no named file
+// is a test file; else null. Each name and the pattern as a line shows them (shownName).
+export function namedFilesSplit(setup, named, label) {
+  const tests = named.filter(setup.isTest);
+  const notTests = named.filter((f) => !setup.isTest(f));
+  const fault = tests.length ? null : [
+    `${label}: name a test file beside them, one matching ${shownName(setup.patternsLine)}; no suite ran`,
+    `${label}: not test files: ${notTests.map(shownName).join(", ")}`];
+  return { tests, notTests, fault };
 }
 
 // The run lists of the worktree `setup` holds (testSetup's): the files of its root `isRunList` names; none listed when
@@ -76,7 +96,7 @@ function groups(files, size) {
 }
 
 // Each task run, WORKERS at a time: a promise of their results, in the tasks' order.
-async function inPool(tasks) {
+export async function inPool(tasks) {
   const results = new Array(tasks.length);
   let next = 0;
   const worker = async () => { while (next < tasks.length) { const k = next++; results[k] = await tasks[k](); } };
@@ -123,8 +143,7 @@ const emptyRunLines = ({ group, ran }, label) => [
 // `run` and `say` as treeCases' are.
 async function treeRuns(run, say) {
   const { tree, commands, adapter, files, results, label } = run;
-  const before = commands.beforeTests ?? [];
-  if (before.length) await firstRedStep({ root: tree, steps: before }, (l) => say(l.startsWith(" ") ? l : `${label}: beforeTests: ${l}`));
+  await runBeforeTests({ root: tree, commands, words: run.words }, (l) => say(l.startsWith(" ") ? l : `${label}: ${l}`));
   mkdirSync(results, { recursive: true });
   const env = commandEnv(tree);
   const tasks = groups(files, commands.filesPerRun).map((group, k) => () => groupCases(
@@ -133,6 +152,61 @@ async function treeRuns(run, say) {
   for (const r of read) if (!r.cases.length) for (const line of emptyRunLines(r, label)) say(line);
   return read;
 }
+
+// `beforeTests`' steps run at the root of the worktree `setup` holds (testSetup's), each line handed to `say`: a promise.
+export async function runBeforeTests({ root, commands, words }, say) {
+  const before = commands.beforeTests ?? [];
+  if (before.length) await firstRedStep({ root, steps: before, words }, (l) => say(l.startsWith(" ") ? l : `beforeTests: ${l}`));
+}
+
+// runCases' arguments for one test file: `{files}` the file, `{out}` the results file, an argument holding `{case}`
+// once per id kept.
+const expandedForCases = (argv, { file, keep, out }) => argv.flatMap((argument) => {
+  if (argument === FILES) return [file];
+  const outFilled = argument.replaceAll(OUT, out);
+  return outFilled.includes(CASE) ? keep.map((id) => outFilled.replaceAll(CASE, id)) : [outFilled];
+});
+
+// The folder a test files' pattern holds its files in, the parts before the first holding a wildcard, ending in "/";
+// "" for a pattern starting with one (`**/*.test.ts`), which names no folder.
+function patternFolder(pattern) {
+  const fixed = [];
+  for (const part of pattern.split("/").slice(0, -1)) {
+    if (WILDCARD.test(part)) break;
+    fixed.push(part);
+  }
+  return fixed.length ? `${fixed.join("/")}/` : "";
+}
+
+// Whether an absolute path is the project's code of the worktree `setup` holds (testSetup's), the question the test
+// sweep's coverage asks: `projectCodeFile(setup)(file)`, its path from the root, else null. A file outside the root,
+// in the install or a folder of installed packages, under .run/, matching a test file's pattern or in the folder a
+// pattern holds its test files in (a test helper) is none.
+export const projectCodeFile = ({ root, commands, isTest }) => {
+  const testFolders = testPatterns(commands).map(patternFolder).filter(Boolean);
+  const isInstalled = (path) => path.startsWith(`${commands.install}/`) || path.split("/").some((part) => INSTALLED.has(part));
+  const isTestSide = (path) => isTest(path) || testFolders.some((folder) => path.startsWith(folder));
+  return (file) => {
+    const path = pathFrom(root, file);
+    if (!path || path.startsWith(".run/")) return null;
+    return isInstalled(path) || isTestSide(path) ? null : path;
+  };
+};
+
+// One run of `argv` over the test file at the root of the worktree `setup` holds, under its environment with
+// `addedEnv`'s variables over it, its results file at `out`: a promise of { ran, cases }.
+async function runFile({ root, adapter }, argv, { file, addedEnv, out }) {
+  const env = Object.assign(commandEnv(root), addedEnv);
+  const ran = await runCommandWithin(argv, { cwd: root, env, timeout: testRunLimit(1) });
+  return { ran, cases: adapter.cases({ root, files: [file], output: ran.tail, results: out }) };
+}
+
+// The test file `run.file` run whole by runTests (runFile): `run` { file, addedEnv, out }.
+export const runFileWhole = (setup, run) => runFile(setup, expanded(setup.commands.runTests, [run.file], run.out), run);
+
+// The test file `run.file` run by runCases with only the cases `run.keep` names, ids as the adapter reads them
+// (runFile): `run` { file, keep, addedEnv, out }.
+export const runFileKeeping = (setup, run) => runFile(setup, expandedForCases(setup.commands.runCases, run), run);
 
 // The cases of the test files run in a tree, in the files' order: a promise of them, each line said handed to `say`,
 // a line of its own starting with `label`. `run`: { tree, commands, adapter, files, results, label }, `results` a
@@ -143,11 +217,6 @@ export const treeCases = async (run, say) => (await treeRuns(run, say)).flatMap(
 // with no link on the way: a file reached through a linked folder is not among them.
 export const worktreeTests = ({ root, isTest }) =>
   workingFiles(root).filter(isTest).map((f) => workingFile(root, f)).filter(Boolean);
-
-// The total line of the green's `{tests}` step.
-const totalLine = ({ cases, files, passes, started }) =>
-  `${TESTS_LABEL}: ${plural(cases.length, "case")} in ${plural(files.length, "file")}, all pass: ${passes ? "True" : "False"} ` +
-  `(${((Date.now() - started) / 1000).toFixed(1)} s)`;
 
 // The test files of a run of several, each { file, seconds, summed: true }, its seconds its cases' times summed; a file
 // none of whose cases has a time is left out.
@@ -163,18 +232,13 @@ function sumCaseSeconds(run) {
 const collectFileSeconds = (runs) => runs.flatMap((r) =>
   (r.group.length === 1 ? [{ file: r.group[0], seconds: r.ran.seconds, summed: false }] : sumCaseSeconds(r)));
 
-// What the files' seconds (collectFileSeconds') are: each a run's own, each its cases' times summed, or some of each.
-function describeSeconds(timed) {
-  if (!timed.some((t) => t.summed)) return OWN_SAID;
-  return timed.some((t) => !t.summed) ? MIXED_SAID : SUMMED_SAID;
-}
-
-// The lines naming the SLOWEST_MAX test files of the runs, slowest first, each with its seconds (formatSlowestLines).
-function listSlowestLines(runs) {
+// The SLOWEST_MAX test files of the runs, slowest first, each with its seconds: { timed, slowest, untimed }, `timed`
+// every file timed (collectFileSeconds'), `untimed` how many files no time was read for.
+function findSlowest(runs) {
   const timed = collectFileSeconds(runs);
   const untimed = runs.reduce((n, r) => n + r.group.length, 0) - timed.length;
   const slowest = timed.sort((a, b) => b.seconds - a.seconds).slice(0, SLOWEST_MAX);
-  return formatSlowestLines({ how: describeSeconds(timed), slowest, untimed });
+  return { timed, slowest, untimed };
 }
 
 // The test files a run failed, in the files' order: each holding a failed or unknown case, and each of a run that read
@@ -187,7 +251,7 @@ const failedFiles = (files, runs, failed) => {
 // The green's `{tests}` step in the worktree `setup` holds (testSetup's): `files`, by their paths from its root, else
 // every test file of it (worktreeTests), run by name in place, its results in a throwaway folder of the OS temp folder,
 // removed after. Says each failed or unknown case with its detail under its file, then the total line, then the slowest
-// test files (listSlowestLines); a run that read no case is said. A promise of { passes, failed, cases, files }: whether every case passed or was skipped, every run
+// test files (findSlowest), in `setup.words`; a run that read no case is said. A promise of { passes, failed, cases, files }: whether every case passed or was skipped, every run
 // reading one, the test files that failed (failedFiles), every case read and the test files run.
 export async function testsStepRun(setup, say, files = worktreeTests(setup)) {
   const started = Date.now();
@@ -197,10 +261,10 @@ export async function testsStepRun(setup, say, files = worktreeTests(setup)) {
     const runs = await treeRuns({ ...setup, tree: setup.root, files, results, label: TESTS_LABEL }, say);
     const cases = runs.flatMap((r) => r.cases);
     const failed = cases.filter((c) => !NOT_FAILED.has(c.outcome));
-    for (const line of listedByFile(failed)) say(line);
+    for (const line of setup.words.listedByFile(failed)) say(line);
     const passes = cases.length > 0 && !failed.length && runs.every((r) => r.cases.length);
-    say(totalLine({ cases, files, passes, started }));
-    for (const line of listSlowestLines(runs)) say(line);
+    say(setup.words.totalLine({ cases, files, passes, seconds: (Date.now() - started) / 1000 }));
+    for (const line of setup.words.slowestLines(findSlowest(runs))) say(line);
     return { passes, failed: failedFiles(files, runs, failed), cases, files };
   } finally {
     rmSync(results, { recursive: true, force: true });

@@ -12,8 +12,9 @@
 import { existsSync, lstatSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { readPlainFile, recordsDir } from "../../_files.mjs";
-import { MAX_DEPTH } from "./source-paths.mjs";
-import { MAX_PATH, STRUCTURE_CAP } from "./structure-model.mjs";
+import { MAX_DEPTH } from "./path-match.mjs";
+import { STRUCTURE_CAP } from "./structure-model.mjs";
+import { MAX_PATH } from "./structure-path.mjs";
 
 // a project's source: tens of thousands of files, read in a few seconds
 const MAX_FILES = 50000;

@@ -1,11 +1,8 @@
-// @level domain
-// Roadkeeper — what the scripts and hooks share about text: escaping, cutting and lines; dates; versions.
+// @level kernel
+// Roadkeeper — what the scripts and hooks share about text: escaping for a pattern, counts with their noun,
+// cutting and lines; dates.
 
 // ------------------------------------------------------------------ text
-
-export const esc = (s) => String(s == null ? "" : s)
-  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-  .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 // A string as a regular expression matches it, literally: every character a pattern reads as syntax escaped.
 export const escapeForPattern = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -13,13 +10,6 @@ export const escapeForPattern = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // Self-contained: the Architecture tab embeds it into its page by its source text.
 export function plural(n, one, many = one + "s") {
   return `${n} ${n === 1 ? one : many}`;
-}
-
-// A count as a page says it, never a bare 0: `zero` at 0; else the number, with plural's noun when `one` is given. The
-// Architecture tab embeds it beside plural.
-export function countInWords(n, zero, one) {
-  if (!n) return zero;
-  return one ? plural(n, one) : String(n);
 }
 
 // the word plural says beside a count of `n`, without the count
@@ -39,7 +29,7 @@ export const controlsReplaced = (s) => String(s == null ? "" : s).replace(/[\p{C
 // A text's lines as CommonMark ends them (LF, CR, CRLF); U+2028 and U+2029 are characters inside a line, read as
 // spaces; a leading byte-order mark is not part of line 1.
 const LINE_END = /\r\n|\n|\r/;
-const IN_LINE = /[\u2028\u2029]/g;
+const IN_LINE = /[\u2028\u2029]/g; // the two separators CommonMark reads inside a line
 export const readerLines = (text) => String(text || "").replace(/^\uFEFF/, "").split(LINE_END).map((l) => l.replace(IN_LINE, " "));
 
 // A fence line as CommonMark reads it: an opener is three or more of one marker and an info string (a backtick fence's
@@ -65,11 +55,13 @@ export function fenceStep(fence, line) {
   const f = fenceLine(line);
   if (!f) return { fence, isFence: false };
   if (!fence) return { fence: f, isFence: true };
-  return { fence: f.ch === fence.ch && f.len >= fence.len && f.info === "" ? null : fence, isFence: true };
+  const closes = f.ch === fence.ch && f.len >= fence.len && f.info === "";
+  return { fence: closes ? null : fence, isFence: true };
 }
 
 // ------------------------------------------------------------------ dates
 
+// an ISO 8601 calendar date, YYYY-MM-DD, the one date shape the dates below read
 export const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // The three numbers of a DATE-shaped string, `{ y, m, d }`, or null.
@@ -94,20 +86,3 @@ export function daysBetween(a, b) {
   const x = utc(a), y = utc(b);
   return x === null || y === null ? null : Math.round((y - x) / 86400000);
 }
-
-// ------------------------------------------------------------------ versions
-
-export const VERSION_TOKEN = /^v\d+(?:\.\d+)*$/i;
-
-// a version token's numbers, part by part: `v2.2` → [2, 2]
-export const versionNumbers = (v) => v.slice(1).split(".").map(Number);
-
-// two version tokens, compared part by part: v0.10 is after v0.9
-export function compareVersions(a, b) {
-  const x = versionNumbers(a), y = versionNumbers(b);
-  for (let i = 0; i < Math.max(x.length, y.length); i++) { const d = (x[i] || 0) - (y[i] || 0); if (d) return d; }
-  return 0;
-}
-
-// the version a milestone's title opens with (`v2.0 — Roadkeeper runs on the tracker` → `v2.0`), or null
-export const versionOf = (title) => { const m = /^\s*(v\d+(?:\.\d+)*)/i.exec(title || ""); return m ? m[1] : null; };

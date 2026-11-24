@@ -2,7 +2,7 @@
 // Roadkeeper — the review points: a point's kind, two points' order, whether a point is due, and the versions a tracker
 // snapshot shows closed.
 
-import { versionOf } from "../../_text.mjs";
+import { versionOf } from "../../_versions.mjs";
 
 // The review point (GLOSSARY: Review point): a day, `YYYY-MM-DD`, or a version, `vX.Y.Z`, as the reader took it. The
 // check decides by these alone; the Architecture tab's page embeds reviewPointKind and reviewPointOrder by their source.

@@ -1,11 +1,12 @@
 # @level infrastructure
 """Roadkeeper: the Python reader behind the Parsers port (../parsers.mjs), run by lib/python-parser.mjs with the Python 3 on
-the PATH. Python's own `ast` parses each file given; no project code runs, and nothing is written.
+the PATH. Python's own `ast` parses each file given; python-sys-path.py, loaded beside it, reads the root's names and
+the sys.path folders from the tree; no project code runs, and nothing is written.
 
 Reads a JSON request on stdin, {"root", "files"}, the files root-relative. With `--version` alone it prints the
 Python's version and ends. Prints one JSON line:
 - {"version", "files"}: each file read, in order, {"file", "imports", "declarations", "all", "bases", "rootNames",
-  "sysPath"}:
+  "sysPath", "clockCalls", "ioCalls"}:
   - each import {"module", "level", "names", "line", "typeOnly", "stdlib"}: the dotted module or null (`from . import
     x`), its relative depth (0 for an absolute one), the names a `from` import takes or null for an `import`, its line,
     whether it sits under `if TYPE_CHECKING:`, and whether it names the standard library;
@@ -18,11 +19,27 @@ Python's version and ends. Prints one JSON line:
   - each folder a `sys.path.insert(<i>, X)` or `sys.path.append(X)` adds, X the root joined with literal parts by
     `os.path.join`, `Path`, `/` or `.joinpath`, {"front", "via", "parts", "line"}: true for an insert, the root's
     import binding or null for its `__file__` chain, the parts, the line; any other X none;
+  - each call to the clock, {"name", "line"}: `datetime.now`, `datetime.today`, `datetime.utcnow`, `date.today` or
+    `time.time`, by the last two parts of the dotted name called;
+  - each call to the built-in `open` by its bare name, {"name", "line"}, unless the file binds or declares `open`;
 - {"version", "stop"}: the first file that stopped the read, {"file", "why", "line"}, `why` "syntax" when Python
   cannot parse it, "nesting" when its tree nests past MAX_NESTING; Python's message never.
 """
-import ast, json, os, sys, sysconfig, warnings
+import ast, importlib.util, json, os, sys, sysconfig, warnings
 
+sys.dont_write_bytecode = True  # the file loaded beside this one leaves no __pycache__ in the plugin
+
+
+def load_beside(file_name):
+    """The Python file `file_name` beside this one, loaded by its path: run isolated (-I), this folder is off sys.path."""
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), file_name)
+    spec = importlib.util.spec_from_file_location(os.path.splitext(file_name)[0].replace("-", "_"), path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+SYS_PATH = load_beside("python-sys-path.py")  # the root's names and the sys.path folders a file's code sets
 MAX_NESTING = 256  # the bound on a source file every reader keeps (source-bounds.mjs)
 GUARD = "TYPE_CHECKING"  # the name whose `if` holds the imports for types alone
 TRIES = (ast.Try,) + ((ast.TryStar,) if hasattr(ast, "TryStar") else ())  # `try`, and `try` with `except*` from 3.11
@@ -105,16 +122,6 @@ def find_bindings(node):
     return {(a.asname or a.name): {"level": node.level, "module": node.module, "rest": [a.name]} for a in node.names if a.name != "*"}
 
 
-def split_dotted_name(expr):
-    """A base's dotted name as its parts, `Base[T]`'s its value's; None for another expression."""
-    expr = expr.value if isinstance(expr, ast.Subscript) else expr
-    parts = []
-    while isinstance(expr, ast.Attribute):
-        parts.insert(0, expr.attr)
-        expr = expr.value
-    return [expr.id] + parts if isinstance(expr, ast.Name) else None
-
-
 def bind_imports(imports):
     """Each name the file's imports bind, to where its dotted path starts, as find_bindings gives it."""
     bound = {}
@@ -126,128 +133,30 @@ def bind_imports(imports):
 def find_imported_bases(bound, classes):
     """Each class base an import binds, where its dotted path starts, {"level", "module", "rest"}, the rest ending on the
     base's own name; a base defined in the file, or bound by no import, none."""
-    parts = [p for c in classes for p in map(split_dotted_name, c.bases) if p and p[0] in bound]
+    parts = [p for c in classes for p in map(SYS_PATH.split_dotted_name, c.bases) if p and p[0] in bound]
     return [dict(bound[p[0]], rest=bound[p[0]]["rest"] + p[1:]) for p in parts]
 
 
-def call_name(node):
-    """A call's function as its dotted parts, `os.path.join(…)`'s ["os", "path", "join"], with no keyword; else None."""
-    plain_call = isinstance(node, ast.Call) and not node.keywords
-    return split_dotted_name(node.func) if plain_call else None
+# the clock's calls, by the last two parts of the name called: `datetime.now()`, `datetime.datetime.now()`
+CLOCK_CALLS = {("datetime", "now"), ("datetime", "today"), ("datetime", "utcnow"), ("date", "today"), ("time", "time")}
 
 
-def calls_named(node, names, count):
-    """Whether a node is a call, with `count` arguments and no keyword, to a function whose dotted name is in `names`."""
-    return call_name(node) in names and len(node.args) == count
+def list_clock_calls(calls):
+    """Each call among `calls`, walk_tree's and so under its bound, to the clock, {"name", "line"}: a dotted name
+    ending on one of CLOCK_CALLS, keywords or not; the clock called under another name, an alias's, is not seen."""
+    names = [(SYS_PATH.split_dotted_name(c.func) or [], c.lineno) for c in calls]
+    return [{"name": ".".join(n[-2:]), "line": line} for n, line in names if tuple(n[-2:]) in CLOCK_CALLS]
 
 
-def method_called(node):
-    """A call's method name, `x.resolve()`'s "resolve", when it takes no keyword; None for another node."""
-    is_method = isinstance(node, ast.Call) and not node.keywords and isinstance(node.func, ast.Attribute)
-    return node.func.attr if is_method else None
+BUILTIN_IO = {"open"}  # the built-ins that do I/O when called by their bare name: `open()` reads or writes a file
 
 
-# the calls that keep the path they are given: `os.path.abspath(__file__)` is still the file
-PATH_OF = (["os", "path", "abspath"], ["abspath"], ["os", "path", "realpath"], ["realpath"], ["Path"], ["pathlib", "Path"])
-DIRNAME = (["os", "path", "dirname"], ["dirname"])  # the calls naming the folder a path is in
-JOINS = (["os", "path", "join"], ["Path"], ["pathlib", "Path"])  # the calls joining the parts after their first
-TO_TEXT = (["str"], ["os", "fspath"])  # the calls turning a path into the text sys.path holds
-
-
-def read_index(node):
-    """A subscript's index when it is a literal whole number at least 0; None otherwise."""
-    index = node.slice.value if isinstance(node.slice, getattr(ast, "Index", ())) else node.slice  # Index before 3.9
-    whole = isinstance(index, ast.Constant) and type(index.value) is int
-    return index.value if whole and index.value >= 0 else None
-
-
-def step_folders_up(node):
-    """One step of a chain of folders up from the file: (the expression inside, the folders it adds); None for a node
-    that is no step."""
-    is_parents_index = isinstance(node, ast.Subscript) and isinstance(node.value, ast.Attribute) and node.value.attr == "parents"
-    if calls_named(node, PATH_OF, 1):
-        return node.args[0], 0
-    if calls_named(node, DIRNAME, 1):
-        return node.args[0], 1
-    if method_called(node) in ("resolve", "absolute") and not node.args:
-        return node.func.value, 0
-    if isinstance(node, ast.Attribute) and node.attr == "parent":
-        return node.value, 1
-    if is_parents_index and read_index(node) is not None:
-        return node.value.value, read_index(node) + 1
-    return None
-
-
-def count_folders_up(node):
-    """How many folders up from the file an expression names: 0 for `__file__`, also through `os.path.abspath`,
-    `realpath`, `Path`, `.resolve()` and `.absolute()`; one more for each `os.path.dirname` and `.parent`, k + 1 for
-    `.parents[k]`; None for another expression."""
-    if isinstance(node, ast.Name):
-        return 0 if node.id == "__file__" else None
-    step = step_folders_up(node)
-    up = None if step is None else count_folders_up(step[0])
-    return None if up is None else up + step[1]
-
-
-def read_root(node, depth, bound):
-    """The root as an expression names it, {"via"}: null for a chain of folders up from the file, `depth` of them; the
-    import binding, {"level", "module", "rest"}, of a name or attribute an import binds; None for another expression."""
-    if count_folders_up(node) == depth:
-        return {"via": None}
-    parts = split_dotted_name(node) if isinstance(node, (ast.Name, ast.Attribute)) else None
-    binding = bound.get(parts[0]) if parts else None
-    rest = binding["rest"] + parts[1:] if binding else []
-    return {"via": dict(binding, rest=rest)} if rest else None
-
-
-def split_join(node):
-    """A join's (head, literal parts' expressions): `os.path.join(H, …)`, `Path(H, …)`, `H.joinpath(…)`, `H / p`; None
-    for another node."""
-    if call_name(node) in JOINS and node.args:
-        return node.args[0], node.args[1:]
-    if method_called(node) == "joinpath":
-        return node.func.value, node.args
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Div):
-        return node.left, [node.right]
-    return None
-
-
-def read_root_folder(node, depth, bound):
-    """A folder written as the root joined with literal parts, {"via", "parts"}: `os.path.join(R, "a", "b")`,
-    `Path(R, "a")`, `R / "a"`, `R.joinpath("a")`, any of them in `str()` or `os.fspath()`; None for another form."""
-    if calls_named(node, TO_TEXT, 1):
-        return read_root_folder(node.args[0], depth, bound)
-    join = split_join(node)
-    if join is None:
-        root = read_root(node, depth, bound)
-        return root and dict(root, parts=[])
-    literal = all(isinstance(n, ast.Constant) and isinstance(n.value, str) for n in join[1])
-    folder = read_root_folder(join[0], depth, bound) if literal else None
-    return folder and dict(folder, parts=folder["parts"] + [n.value for n in join[1]])
-
-
-# the `sys.path` calls read, each by its dotted name, with its count of arguments
-SYS_PATH_ADDS = {("sys", "path", "insert"): 2, ("sys", "path", "append"): 1}
-
-
-def list_sys_path_folders(calls, depth, bound):
-    """Each folder the file's `sys.path.insert(<i>, X)` and `sys.path.append(X)` put on the path, X the root joined with
-    literal parts: {"front", "via", "parts", "line"}, `front` for an insert. Another X none."""
-    found = []
-    for c in calls:
-        name = tuple(call_name(c) or ())
-        if SYS_PATH_ADDS.get(name) != len(c.args):
-            continue
-        folder = read_root_folder(c.args[-1], depth, bound)
-        if folder is not None:
-            found.append(dict(folder, front=name[-1] == "insert", line=c.lineno))
-    return found
-
-
-def list_root_names(tree, depth):
-    """The names the file's top level sets to the root by a chain of folders up from the file, `depth` of them."""
-    sets_root = lambda s: isinstance(s, (ast.Assign, ast.AnnAssign)) and s.value is not None and count_folders_up(s.value) == depth
-    return [t.id for s in tree.body if sets_root(s) for t in list_assigned_targets(s) if isinstance(t, ast.Name)]
+def list_io_calls(calls, bound, declared):
+    """Each call among `calls`, walk_tree's and so under its bound, to a BUILTIN_IO built-in by its bare name,
+    {"name", "line"}; a name the file's imports bind or its top level declares is its own, not the built-in."""
+    own = set(bound) | {d["name"] for d in declared}
+    return [{"name": c.func.id, "line": c.lineno} for c in calls
+            if isinstance(c.func, ast.Name) and c.func.id in BUILTIN_IO and c.func.id not in own]
 
 
 def list_target_names(target):
@@ -324,21 +233,12 @@ def read_literal_strings(value):
     return [e.value for e in elements] if plain else None
 
 
-def list_assigned_targets(s):
-    """The targets a statement assigns to, a plain, annotated or augmented assignment's; none for another statement."""
-    if isinstance(s, ast.Assign):
-        return s.targets
-    if isinstance(s, (ast.AnnAssign, ast.AugAssign)):
-        return [s.target]
-    return []
-
-
 def read_all_names(tree):
     """`__all__`'s names when the file's top level sets it, its last setting a literal list or tuple of strings and
     nothing growing it; else None."""
     names = None
     for s in tree.body:
-        if any(isinstance(t, ast.Name) and t.id == "__all__" for t in list_assigned_targets(s)):
+        if any(isinstance(t, ast.Name) and t.id == "__all__" for t in SYS_PATH.list_assigned_targets(s)):
             names = None if isinstance(s, ast.AugAssign) or s.value is None else read_literal_strings(s.value)
     return names
 
@@ -371,8 +271,9 @@ def read_file(root, rel):
     rows = [r for node, type_only in imports for r in list_import_rows(node, type_only)]
     bound, depth = bind_imports(imports), len(rel.split("/"))  # the root is as many folders up as the path has parts
     return {"file": rel, "imports": rows, "declarations": declarations, "all": read_all_names(tree),
-            "bases": find_imported_bases(bound, classes), "rootNames": list_root_names(tree, depth),
-            "sysPath": list_sys_path_folders(calls, depth, bound)}
+            "bases": find_imported_bases(bound, classes), "rootNames": SYS_PATH.list_root_names(tree, depth),
+            "sysPath": SYS_PATH.list_sys_path_folders(calls, depth, bound), "clockCalls": list_clock_calls(calls),
+            "ioCalls": list_io_calls(calls, bound, declarations)}
 
 
 def read(request):
@@ -387,7 +288,6 @@ def read(request):
 
 
 def main():
-    sys.dont_write_bytecode = True
     warnings.simplefilter("ignore")  # a file's own warnings, an escape sequence's say, are not the reader's output
     if sys.argv[1:] == ["--version"]:
         print(format_version())

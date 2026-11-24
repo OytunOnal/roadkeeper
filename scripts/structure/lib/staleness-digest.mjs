@@ -1,15 +1,16 @@
-// @level application
-// Roadkeeper — the structure digest's use case: which files it reads, how they group into modules, the facts the structure
+// @level domain
+// Roadkeeper — the structure digest: which files it reads, how they group into modules, the facts the structure
 // report reads, and the stamp written from them. The walk, the reads and the hashing are disk-facts.mjs's.
 //
 // A file belongs to the deepest module above it. Every source file (SOURCE) outside the modules is read, tests
 // included, since the structure command records their edges; only those no `## Tests` pattern names are listed as
 // `loose`. What `## Ignore` names is taken out and counted.
 
-import { SOURCE, globMatch, pathAndParents } from "./source-paths.mjs";
-import { structurePath } from "./structure-model.mjs";
+import { globMatch, pathAndParents } from "./path-match.mjs";
+import { SOURCE } from "./source-paths.mjs";
+import { structurePath } from "./structure-path.mjs";
 import { testOf } from "./rulings.mjs";
-import { diskLines } from "./report-lines.mjs";
+import { diskRefuses } from "./report-findings.mjs";
 
 // What a digest of these modules reads: { walked, the folders to walk, outer modules first so a nested one already read
 // is passed over; reads(rel), whether a file met is read: a module's, or under the `loose` option a source file no
@@ -46,7 +47,7 @@ export function rootFilesOffWalk(sm, d) {
 }
 
 // The disk's facts about the model's modules, from a digest `d` of them, a plain object the structure report reads
-// (the `facts` the disk's lines take, report-lines.mjs's diskLines):
+// (the `facts` the disk's lines and findings take, report-lines.mjs's diskLines and report-findings.mjs):
 // - files: each module's files on disk, by its path, sorted; empty past a bound;
 // - loose: the source files on disk no module holds and no test pattern names, sorted; empty past a bound;
 // - digest, over: the digest, or null and the bound passed;
@@ -62,11 +63,11 @@ export function factsOf(sm, d) {
 
 // structure.json's data, an object with modules, stamped in place from the model `sm` read from it and the disk's
 // `facts`: each module's `files` and the files no module holds (`loose`), and the `digest` of their contents. Returns
-// { files: the count stamped } or { refused: the structure report's disk-unread lines }, and then the data is
-// untouched. A stale or hard line never refuses: the stamp fixes staleness, the check judges the rules.
+// { files: the count stamped } or { refused: true } where the disk refuses a stamp (report-findings.mjs, diskRefuses),
+// and then the data is untouched. A stale or hard line never refuses: the stamp fixes staleness, the check judges the
+// rules.
 export function stampData(data, sm, facts) {
-  const diskUnread = diskLines(sm, facts).disk;
-  if (diskUnread.length) return { refused: diskUnread };
+  if (diskRefuses(sm, facts)) return { refused: true };
   for (const mod of data.modules) {
     const p = mod ? structurePath(mod.path).path : null;
     if (p && Object.hasOwn(facts.files, p)) mod.files = facts.files[p];

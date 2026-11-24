@@ -11,8 +11,9 @@
 // receives it as JSON and writes it with textContent and setAttribute only.
 
 import { functionSources } from "../../_function-sources.mjs";
-import { countInWords, esc, plural } from "../../_text.mjs";
-import { moduleCountWords } from "../lib/module-records.mjs";
+import { plural } from "../../_text.mjs";
+import { countInWords, escapeHtml } from "../../_words.mjs";
+import { moduleCountWords } from "../lib/module-count-words.mjs";
 import { reviewPointKind, reviewPointOrder } from "../lib/review-points.mjs";
 import * as tabCountsPart from "./lib/tab-counts.mjs";
 import { drawsRed, MARK, outwardFirst, SIZE_STEPS, tabData } from "./lib/tab-data.mjs";
@@ -28,15 +29,15 @@ const jsonInScript = (v) => JSON.stringify(v).replace(/</g, "\\u003c").replace(/
 // the table's Entry cell: a module's entry, or each of its several root files in its mark's colour, the ones over the
 // page cap counted, then the exception covering them
 function entryCell(m) {
-  if (!tabCountsPart.severalRootFiles(m)) return esc(m.entry || "");
+  if (!tabCountsPart.severalRootFiles(m)) return escapeHtml(m.entry || "");
   const mark = tabCountsPart.markRootFiles(m), exceptionWords = tabPanelPart.exceptionNote(mark, m.rootFilesUntil).trim();
-  return [...m.rootFiles.map((f) => `<span class="${tabWordsPart.markClass(mark).trim()}">${esc(f)}</span>`),
-    ...(m.rootFilesCut ? [`${m.rootFilesCut} more over the page cap`] : []), ...(exceptionWords ? [esc(exceptionWords)] : [])].join("<br>");
+  return [...m.rootFiles.map((f) => `<span class="${tabWordsPart.markClass(mark).trim()}">${escapeHtml(f)}</span>`),
+    ...(m.rootFilesCut ? [`${m.rootFilesCut} more over the page cap`] : []), ...(exceptionWords ? [escapeHtml(exceptionWords)] : [])].join("<br>");
 }
 // the table's count cell: a module's files and the way in, the first of its notes (listModuleNotes), red past the
 // interface
 function drawCountCell(m) {
-  const words = esc(tabWordsPart.listModuleNotes(m)[0]);
+  const words = escapeHtml(tabWordsPart.listModuleNotes(m)[0]);
   return m.pastInterface ? `<span class="sv-past">${words}</span>` : words;
 }
 // the lede's lines on the modules with several root files: the ones drawn red, uncovered or due, and the ones an
@@ -79,7 +80,7 @@ function ledeHtml(view) {
     view.cycles.length ? `${plural(view.cycles.length, "cycle")} among modules, marked on their boxes` : "",
     cuts.length ? `Not drawn: ${cuts.join("; ")}` : "",
   ].filter(Boolean);
-  return `<ul class="sv-lede">${lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>`;
+  return `<ul class="sv-lede">${lines.map((l) => `<li>${escapeHtml(l)}</li>`).join("")}</ul>`;
 }
 
 // The key: each mark the drawing can show, one line each, whether or not this drawing has one; a line is its parts, each
@@ -107,25 +108,25 @@ const KEY = [
 ];
 // The key, a group of the page's (tabs-client.mjs, restoreGroup): drawn open, it opens on a first visit; a click on its
 // line closes it, and the browser keeps that choice as it keeps the page's other groups'.
-const keyHtml = () => `<details class="group sv-key" id="marks-key" open><summary><span class="t">What the marks mean</span></summary><ul>${KEY.map((parts) => `<li>${parts.map(([mark, says]) => `<strong>${esc(mark)}</strong>${esc(says)}`).join("")}</li>`).join("")}</ul></details>`;
+const keyHtml = () => `<details class="group sv-key" id="marks-key" open><summary><span class="t">What the marks mean</span></summary><ul>${KEY.map((parts) => `<li>${parts.map(([mark, says]) => `<strong>${escapeHtml(mark)}</strong>${escapeHtml(says)}`).join("")}</li>`).join("")}</ul></details>`;
 
 // The section: the lede, the structure's files the page could not read (`unread`, each { where, what }), the key, the
-// drawing with its detail beside it, and the modules as a table in the page's scroll box. `src` is the relative path
-// from the page to the repository root, for the detail column's links.
-function structureHtml(view, unread, sources, src = "") {
+// drawing with its detail beside it, and the modules as a table in the page's scroll box. `sources` is the line naming
+// the structure files; `src` is the relative path from the page to the repository root, for the detail column's links.
+function structureHtml(view, unread, { sources, src = "" }) {
   // a module's span, outermost first: its entry's level and every level its files and nested modules hold
   const levelsOf = (m) => (m.lv.length ? tabWordsPart.levelNames(m.lv, view.rings) : m.level || "no level");
   const bad = unread.length
-    ? `<details class="sv-unread"><summary>${plural(unread.length, "file")} of the structure could not be read</summary><ul>${unread.map((m) => `<li><span class="mono">${esc(m.where)}</span> — ${esc(m.what)}</li>`).join("")}</ul></details>`
+    ? `<details class="sv-unread"><summary>${plural(unread.length, "file")} of the structure could not be read</summary><ul>${unread.map((m) => `<li><span class="mono">${escapeHtml(m.where)}</span> — ${escapeHtml(m.what)}</li>`).join("")}</ul></details>`
     : "";
-  const rows = view.modules.map((m) => `<tr><td class="mono">${esc(m.p)}</td><td>${esc(levelsOf(m))}</td><td class="mono">${entryCell(m)}</td><td class="num">${drawCountCell(m)}</td></tr>`).join("");
+  const rows = view.modules.map((m) => `<tr><td class="mono">${escapeHtml(m.p)}</td><td>${escapeHtml(levelsOf(m))}</td><td class="mono">${entryCell(m)}</td><td class="num">${drawCountCell(m)}</td></tr>`).join("");
   return [
     `<h2>Levels and modules</h2>`,
     `<p class="s">${sources}</p>`,
     ledeHtml(view),
     bad,
     keyHtml(),
-    `<div class="sv" id="sv" data-src="${esc(src)}">`,
+    `<div class="sv" id="sv" data-src="${escapeHtml(src)}">`,
     `<div class="sv-bar"><span class="sv-crumb" id="sv-crumb"></span><span class="sv-count" id="sv-count"></span><span class="sv-ctl"><span class="sv-seg" role="group" aria-label="Arrows"><button type="button" data-ar="bad" aria-pressed="true">Violations</button><button type="button" data-ar="all" aria-pressed="false">All arrows</button><button type="button" data-ar="selected" aria-pressed="false">Selected</button></span><button type="button" class="sv-btn" data-z="out" aria-label="Zoom out">−</button><button type="button" class="sv-btn" data-z="in" aria-label="Zoom in">+</button><button type="button" class="sv-btn" data-z="fit">Fit</button></span></div>`,
     // the not-started line: the drawing removes it once drawn, so a page cut before the drawing's script, or a script
     // stopped on its data, still says so; its link reloads the page as it is, the address and so the tab kept, needing
@@ -143,16 +144,16 @@ function structureHtml(view, unread, sources, src = "") {
 // indexes `sizeSteps`, the tab's own SIZE_STEPS when not given; past the last step the section only says the drawing is
 // left out, under the page's `cap`. `linkBase` starts the links to the structure files.
 export function architectureTab(report, { sizeStep, linkBase, cap, sizeSteps = SIZE_STEPS }) {
-  const src = (f) => `<a href="${esc(linkBase + f)}">${esc(f)}</a>`;
+  const src = (f) => `<a href="${escapeHtml(linkBase + f)}">${escapeHtml(f)}</a>`;
   const [rules, graph] = ["docs/roadkeeper/dependency-rules.md", "docs/roadkeeper/structure.json"].map(src);
   const lines = report.atop;
-  const atop = lines.length ? `<p class="unread report">${lines.map(esc).join("<br>")}</p>` : "";
+  const atop = lines.length ? `<p class="unread report">${lines.map(escapeHtml).join("<br>")}</p>` : "";
   if (sizeStep >= sizeSteps.length) {
     const unread = report.unread.length ? `; ${report.unread.length} of its files could not be read` : "";
     return { atop, html: `<h2>Levels and modules</h2><p class="note">The structure is too large to draw under the page's ${cap / 1024 / 1024} MB cap and is left out${unread}: ${rules} and ${graph} hold it.</p>`, css: "", js: "", leftOut: true };
   }
   const view = tabData(report.model, sizeSteps[sizeStep], report.check);
-  return { atop, html: structureHtml(view, report.unread, `${rules} · ${graph}`, linkBase), css: STRUCTURE_CSS, js: STRUCTURE_JS, leftOut: false };
+  return { atop, html: structureHtml(view, report.unread, { sources: `${rules} · ${graph}`, src: linkBase }), css: STRUCTURE_CSS, js: STRUCTURE_JS, leftOut: false };
 }
 
 // The drawing's style: it paints from the token file's names, the page's own (scripts/road/tokens.css), which

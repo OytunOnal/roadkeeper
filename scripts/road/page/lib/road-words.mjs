@@ -1,11 +1,12 @@
 // @level presentation
 // Roadkeeper — the words The Road's page says in more than one of its parts: the page's one date format, a closed
-// version's state, an issue's number linked, an issue's "#N title" linked, "ready to close" linked to its line, an
+// version's state, a milestone's heading, an issue's number linked, an issue's "#N title" linked, "ready to close" linked to its line, an
 // element's name, and the Waiting on you tab's id and name.
 //
 // Tracker text is a stranger's: every title is escaped.
 
-import { dateParts, esc, isCalendarDate } from "../../../_text.mjs";
+import { dateParts, isCalendarDate } from "../../../_text.mjs";
+import { escapeHtml } from "../../../_words.mjs";
 import { inline } from "./markdown-subset.mjs";
 
 // the months as the page's one date format names them, January first
@@ -23,17 +24,21 @@ export function longDate(iso) {
 // word alone with no day.
 export const closeSaid = (markerWord, day) => (day ? `${markerWord} on ${longDate(day)}` : markerWord);
 
+// A milestone's version and name, once: "vX.Y — <name>", the version alone with no name apart from it; `m` the road
+// model's milestone, its version as drawn and its name.
+export const milestoneHeading = (milestone) => (milestone.name && milestone.name !== milestone.version ? `${milestone.version} — ${milestone.name}` : milestone.version);
+
 // "ready to close", linked to the bar's part, whose line says who closes the current milestone
 export const READY_TO_CLOSE_LINK = `<a href="#ready-to-close">ready to close</a>`;
 
 // An element's name, to a screen reader and on hover.
-export const named = (name) => ` aria-label="${esc(name)}" title="${esc(name)}"`;
+export const named = (name) => ` aria-label="${escapeHtml(name)}" title="${escapeHtml(name)}"`;
 
 // The Waiting on you tab: its id, which its link and its section name, and its name on the nav.
 export const YOU_TAB = Object.freeze({ id: "you", name: "Waiting on you" });
 
 // A link to issue `i`, which has a URL, holding `inner`, with the class `cls` when one is given.
-const issueAnchor = (i, inner, cls) => `<a${cls ? ` class="${cls}"` : ""} href="${esc(i.url)}" rel="noopener">${inner}</a>`;
+const issueAnchor = (i, inner, cls) => `<a${cls ? ` class="${cls}"` : ""} href="${escapeHtml(i.url)}" rel="noopener">${inner}</a>`;
 
 export const issueRef = (i) => (i.url ? issueAnchor(i, `#${i.number}`) : `#${i.number}`);
 

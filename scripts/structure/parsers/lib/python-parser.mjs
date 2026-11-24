@@ -1,7 +1,7 @@
 // @level infrastructure
 // Roadkeeper — the Python part of the Parsers port (../parsers.mjs): python-reader.py, run once per read by the Python 3 on
 // the PATH, parses the `.py` files given with Python's own `ast` and gives back each one's imports, top-level
-// declarations, `__all__` and class bases; this file resolves them by the port's rules. The interpreter is `python3`, then `python`, each from the PATH's absolute folders, the
+// declarations, `__all__`, class bases, clock calls and calls to the built-in `open`; this file resolves them by the port's rules. The interpreter is `python3`, then `python`, each from the PATH's absolute folders, the
 // first that runs the reader and reports Python 3; it runs isolated (`-I`), so no variable points the reader at the
 // project's code. The reader's output is outside data: read under OUTPUT_MAX and checked against its shape, a
 // malformed or oversized one a stop naming the reader. The read is bounded at READ_TIMEOUT and READ_PER_FILE a file
@@ -84,9 +84,10 @@ function stopOnFailedRead(e, version, bound) {
   return { stop: `the Python reader failed (exit ${exit}) under Python ${version}` };
 }
 
-// What the Python 3 on the PATH reads of the `.py` files given: { read, heritage, declarations, tool, foundNowhere },
-// as the port gives them, the declarations `declared`'s, `tool` naming Python by its major and minor version,
-// `foundNowhere` the imports found in no search place and not in the standard library, { file, name }; or { stop }.
+// What the Python 3 on the PATH reads of the `.py` files given: { read, heritage, declarations, tool, foundNowhere,
+// outsideUses }, as the port gives them, the declarations `declared`'s, `tool` naming Python by its major and minor
+// version, `foundNowhere` the imports found in no search place and not in the standard library, { file, name }; or
+// { stop }.
 export function pythonParser(root, { files, declared }) {
   const python = findPython3();
   if (!python) return NO_PYTHON;
@@ -105,16 +106,21 @@ export function pythonParser(root, { files, declared }) {
   const given = new Set(files);
   const heritage = parsedOutput.files.flatMap(({ file, bases }) => [...new Set(bases.map((b) => findBaseFile(root, file, copyWithAddedFolders(b, file, added))))]
     .filter((to) => to !== null && to !== file && given.has(to)).map((to) => ({ from: file, to, kind: "inheritance" })));
-  const foundNowhere = listImportsFoundNowhere(root, parsedOutput.files, added);
-  return { read, heritage, declarations, tool: `Python ${toMajorMinor(parsedOutput.version)}`, foundNowhere };
+  const outside = listOutsideImports(root, parsedOutput.files, added);
+  const foundNowhere = outside.filter((i) => !i.stdlib).map(({ file, name }) => ({ file, name }));
+  const callsOf = (field, kind) => parsedOutput.files.flatMap((row) => row[field].map(({ name, line }) => ({ file: row.file, line, name, kind, stdlib: true, typeOnly: false })));
+  const calls = [...callsOf("clockCalls", "clock"), ...callsOf("ioCalls", "io")];
+  return { read, heritage, declarations, tool: `Python ${toMajorMinor(parsedOutput.version)}`, foundNowhere, outsideUses: [...outside, ...calls] };
 }
 
-// The absolute imports in `rows` found in no search place, their first part at neither the root nor `src/`, and not the
-// standard library's: each { file, name }, the importing file and the dotted name.
-function listImportsFoundNowhere(root, rows, added) {
-  const isNowhere = (file, i) => i.level === 0 && !i.stdlib && findStartFolder(root, file, copyWithAddedFolders(i, file, added)) === null
+// The absolute imports in `rows` found in no search place, their first part at neither the root nor `src/`: the
+// standard library's and the packages', each { file, line, name, kind: "import", stdlib, typeOnly }, the importing
+// file and the dotted name.
+function listOutsideImports(root, rows, added) {
+  const isOutside = (file, i) => i.level === 0 && findStartFolder(root, file, copyWithAddedFolders(i, file, added)) === null
     && !isFirstPartAtRoot(root, i.module);
-  return rows.flatMap(({ file, imports }) => imports.filter((i) => isNowhere(file, i)).map((i) => ({ file, name: i.module })));
+  return rows.flatMap(({ file, imports }) => imports.filter((i) => isOutside(file, i))
+    .map((i) => ({ file, line: i.line, name: i.module, kind: "import", stdlib: i.stdlib, typeOnly: i.typeOnly })));
 }
 
 // A copy of the import or base `item` of the file `file`, with the folders its file puts on sys.path (`added`,
@@ -189,7 +195,9 @@ const isBase = (b) => isObject(b) && isInt(b.level) && isModule(b.module)
   && Array.isArray(b.rest) && b.rest.length > 0 && b.rest.every(isText);
 const isSysPathFolder = (s) => isObject(s) && typeof s.front === "boolean" && isInt(s.line)
   && Array.isArray(s.parts) && s.parts.every(isText) && (s.via === null || isBase(s.via));
+const isCall = (c) => isObject(c) && isText(c.name) && isInt(c.line);
 const isRow = (r, file) => r && r.file === file && Array.isArray(r.imports) && r.imports.every(isImport)
+  && Array.isArray(r.clockCalls) && r.clockCalls.every(isCall) && Array.isArray(r.ioCalls) && r.ioCalls.every(isCall)
   && Array.isArray(r.declarations) && r.declarations.every(isDeclaration) && isNames(r.all)
   && Array.isArray(r.bases) && r.bases.every(isBase) && Array.isArray(r.rootNames) && r.rootNames.every(isText)
   && Array.isArray(r.sysPath) && r.sysPath.every(isSysPathFolder);

@@ -2,7 +2,7 @@
 // Roadkeeper — the graph the structure command writes, from the project's sources (source-files.mjs, sourceFiles) read through the
 // Parsers port: the modules with their root files, the levels, the edges and the declarations. A given file the parsers
 // did not read as a root stops it, naming the file, as does an import inside the repository that does not resolve: a
-// graph with fewer edges than the code would read clean.
+// graph with fewer edges than the code would read clean. The command's closing lines are graph-lines.mjs's.
 //
 // The Parsers port, what reads a project's code: ../parsers/parsers.mjs, the project's own parsers; a fake in tests.
 // - read(root, files, declared): a promise of { stop }, or of what it read of `files`, root-relative:
@@ -12,17 +12,18 @@
 //   - heritage: the `implements` and `inheritance` edges between the files given;
 //   - declarations: each of `declared`'s top-level declarations, by file, { name, kind, exported };
 //   - foundNowhere (optional): the Python imports found in no search place and not in the standard library, each
-//     { file, name }, the importing file and the import's name.
+//     { file, name }, the importing file and the import's name;
+//   - outsideUses (optional): what each Python file uses from outside the repository, { file, line, name, kind,
+//     stdlib, typeOnly }: an import found in no search place, kind "import", a clock call, kind "clock", or a call to
+//     the built-in open, kind "io".
 
-import { plural } from "../../_text.mjs";
-import { globMatch, underPath } from "./source-paths.mjs";
+import { findBreaches, nextBaseline } from "./inner-levels-pure.mjs";
+import { globMatch, underPath } from "./path-match.mjs";
 import { printable, readerMessage } from "./printable.mjs";
 import { testOf } from "./rulings.mjs";
 
 // a stop names this many unread files, imports or lines and counts the rest: enough to start on
 export const SHOWN = 20;
-// the count of Python imports found nowhere names this many: enough to see which source root is missed
-const NAMED_NOWHERE = 5;
 // a thrown message is cut here: a stop stays one readable line
 const MESSAGE = 600;
 // what an import's name carries beyond printable's characters, kept so a stop names the import as written
@@ -56,10 +57,11 @@ function importEdges(read, ignore) {
 }
 
 // The graph of the sources `{ root, folders, files, levels, tests, ignore }` read by `parsers`: { data, foundNowhere },
-// structure.json's tool, modules, levels, edges and declarations, unstamped, and the names of the code's Python imports
-// found nowhere, a test's aside, each once, sorted; or { stop }. A file no module holds, a test aside, is its own interface: its level and declarations are read
-// as an entry's.
-export async function dependencyGraph({ root, folders, files, levels, tests, ignore }, parsers) {
+// structure.json's tool, modules, levels, edges, declarations, the inner-level Python files' breaches of purity
+// (`impure`) and their baseline (`impureBaseline`, from `previousBaseline`, the one structure.json held, or null for
+// none), unstamped, and the names of the code's Python imports found nowhere, a test's aside, each once, sorted; or
+// { stop }. A file no module holds, a test aside, is its own interface: its level and declarations are read as an entry's.
+export async function dependencyGraph({ root, folders, files, levels, tests, ignore }, parsers, previousBaseline = null) {
   const inModule = (f) => folders.some((m) => underPath(f, m)), isTest = testOf(tests);
   const loose = files.filter((f) => !inModule(f) && !isTest(f));
   const taggedFiles = files.filter((f) => levels[f] && (inModule(f) || !isTest(f)));
@@ -75,19 +77,11 @@ export async function dependencyGraph({ root, folders, files, levels, tests, ign
   const { edges, unresolved } = importEdges(got.read, ignore);
   if (unresolved.length) return { stop: `${unresolved.length} import(s) inside the repository do not resolve: ${unresolved.slice(0, SHOWN).join(", ")}` };
   const declarations = Object.assign(Object.create(null), Object.fromEntries(declared.map((f) => [f, got.declarations[f] || []])));
-  const data = { tool: got.tool, modules, levels: tagged, edges: uniqueEdges([...edges, ...got.heritage]), declarations };
+  const impure = findBreaches(tagged, got.outsideUses || [], isTest);
+  const data = {
+    tool: got.tool, modules, levels: tagged, edges: uniqueEdges([...edges, ...got.heritage]), declarations,
+    impure, impureBaseline: nextBaseline(previousBaseline, impure),
+  };
   const codeNowhere = (got.foundNowhere || []).filter((i) => !isTest(i.file)).map((i) => i.name);
   return { data, foundNowhere: [...new Set(codeNowhere)].sort() };
-}
-
-// The structure command's closing line for a written graph, stamped `files` files.
-export const graphLine = (data, files) =>
-  `${data.modules.length} modules, ${Object.keys(data.levels).length} files with a level, ${data.edges.length} edges; ${files} files, digest ${data.digest.slice(0, 12)}`;
-
-// The structure command's line counting the Python imports found nowhere, naming the first NAMED_NOWHERE; null for none.
-export function foundNowhereLine(names) {
-  if (!names.length) return null;
-  const more = names.length > NAMED_NOWHERE ? `, and ${names.length - NAMED_NOWHERE} more` : "";
-  const named = names.slice(0, NAMED_NOWHERE).map((n) => printable(n)).join(", ");
-  return `${plural(names.length, "Python import")} found in no search place and not in the standard library: ${named}${more}`;
 }

@@ -11,8 +11,10 @@
 // non-zero when the tracker refuses one.
 
 import { rootOption } from "./_root-option.mjs";
-import { readTracker, renameMilestones, snapshotSource } from "./_tracker.mjs";
-import { forecast, forecastLines, keepsCloseReasons, renameLines } from "./_version-forecast.mjs";
+import { readTracker, renameMilestones } from "./_tracker.mjs";
+import { snapshotSource } from "./_tracker-words.mjs";
+import { forecast, keepsCloseReasons } from "./_version-forecast.mjs";
+import { forecastLines, renameLines } from "./_version-forecast-lines.mjs";
 
 // what --help prints: how to run the command
 const USAGE = `Usage: node version-forecast.mjs [--offline] [--apply] [--root <path>] [milestone number ...]
