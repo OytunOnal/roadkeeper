@@ -13,10 +13,14 @@ import { readTimelines } from "./lib/read-timelines.mjs";
 import { readEntryFacts } from "./lib/read-entry-facts.mjs";
 import { findTranscriptFolder, listTranscripts, nameRun, readLastWritten } from "./lib/transcript-folder.mjs";
 import { buildReadFailureLine } from "./lib/build-read-failure-line.mjs";
+
+// what a failed read of the window stops the command with, readSliceWindow's refusal for a thrown error
+export { buildReadFailureLine };
 import { LINE_BYTES_CAP, readEntriesIn } from "./lib/transcript-lines.mjs";
 import { readSliceWindowFrom } from "./lib/window-read.mjs";
 
-// The slice window of `spec` at `root`'s tracker, ending at `now` when no other issue is labelled after it:
+// The slice window of `spec` at `root`'s tracker, ending at `now` while the slice holds `active` and no other issue
+// is labelled after it:
 // { window: { from, to, said } } or { refused }, a failed read said as a refusal.
 export function readSliceWindow(root, spec, now) {
   try {

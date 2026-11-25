@@ -6,7 +6,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { recordsDir } from "./_files.mjs";
-import { git } from "./_git.mjs";
+import { findGitPath, git } from "./_git.mjs";
 import { shellCommands } from "./_shell.mjs";
 
 const CAP = 1024 * 1024; // bytes of stdin a hook reads; past it a PreToolUse hook lets the command through, said
@@ -120,7 +120,7 @@ export function projectRecordsOrNull(cwd) {
 // The work tree's root; "" when there is none to watch, as for treeRoot; null when git could not answer.
 export function repoRoot(cwd) {
   if (!directoryExists(cwd)) return "";
-  try { return git(["rev-parse", "--show-toplevel"], cwd); }
+  try { return findGitPath(cwd, "top"); }
   catch { return treeRoot(cwd) ? null : ""; }
 }
 

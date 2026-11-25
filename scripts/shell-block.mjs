@@ -9,7 +9,10 @@
 // - `sed` rewriting a file in place: `-i` alone or in a cluster of short options, `--in-place`, with or without a suffix;
 // - `git show <rev>:<path>` with `--output`, which leaves that file empty and prints the file into the call's result;
 // - a chain: more than one simple command in one call, joined by `&&`, `||`, `;`, `&`, `|` or a newline, or inside
-//   `$( )`, backticks, a subshell or a process substitution, in Bash and PowerShell alike.
+//   `$( )`, backticks, a subshell or a process substitution, in Bash and PowerShell alike; a chain that sleeps (`sleep`,
+//   `Start-Sleep`) is a wait polling a run, and its refusal names the run's notice; a `sleep` behind `timeout` or `busybox`,
+//   whose program is not looked past, gets the chain's words. Claude Code runs this hook on the
+//   Monitor tool's commands too, handed over as Bash calls.
 // A command's forms are judged before the chain, so a chain holding one says that form. Its program is found past
 // assignments, shell keywords and the programs that run the next word (`command`, `env`, …), whatever its path or `.exe`;
 // the interpreters are python, python3, python3.N, py and node.

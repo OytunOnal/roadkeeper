@@ -60,8 +60,8 @@ import { firstRedStep } from "./lib/steps-run.mjs";
 import { slowestLines, totalLine } from "./lib/test-run-lines.mjs";
 import { isPathFromRoot } from "./lib/json-shapes.mjs";
 import {
-  inPool, namedFilesSplit, projectCodeFile, runBeforeTests, runFileKeeping, runFileWhole, testFileMatcher, testSetup,
-  testsStepRun, treeCases, worktreeRunLists, worktreeTests,
+  inPool, makeSharedPool, namedFilesSplit, projectCodeFile, runBeforeTests, runFileKeeping, runFileWhole,
+  runTreeBeforeTests, testFileMatcher, testSetup, testsStepRun, treeCases, worktreeRunLists, worktreeTests,
 } from "./lib/test-run.mjs";
 import { testedTree } from "./lib/tested-tree.mjs";
 import { borrowInstall, checkouts, worktreeInstall, worktreeRoot } from "./lib/worktree.mjs";
@@ -80,7 +80,8 @@ const ADAPTERS = Object.freeze({
   uncommittedFiles, workingFile, workingFiles, changedFiles, nearStamp, testedTree, checkouts, pathJoin: join,
   branches, remoteHome, remoteHolds, mergeBase, redRun, stampedRecord,
   readCommands, COPY_COMMAND, RULES_COPY, copyDiffers,
-  namedFilesSplit, testFileMatcher, testSetup, testsStepRun, treeCases, worktreeRunLists, worktreeTests,
+  makeSharedPool, namedFilesSplit, runTreeBeforeTests, testFileMatcher, testSetup, testsStepRun, treeCases,
+  worktreeRunLists, worktreeTests,
   changeReaders, readerScan, readersThrough,
   findRecordsRefusal, formatUnwrittenLine, listRecordedTrees, readSuiteRecord, writeSuiteRecords,
 });
@@ -118,6 +119,10 @@ export function testFileRuns(dir) {
     testFiles: () => worktreeTests(setup), runBefore: (say) => runBeforeTests(setup, say),
     runWhole: (run) => runFileWhole(setup, run), runKeeping: (run) => runFileKeeping(setup, run), runSideBySide: inPool };
 }
+
+// A pool its callers share, one run per processor at a time across all of them (lib/test-run.mjs): same-cases' two
+// trees take their turns in one.
+export { makeSharedPool } from "./lib/test-run.mjs";
 
 // The remote-tracking ref of a remote's default branch in the worktree at `root`, `remoteHome(root, remote, home)`: ""
 // when the remote's name can hold none or the clone holds none.

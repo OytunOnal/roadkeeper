@@ -6,13 +6,10 @@
 
 import { copyFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
-import { GIT_TIMEOUT, git, gitWithin, trackedFiles } from "../../_git.mjs";
+import { join } from "node:path";
+import { GIT_TIMEOUT, findGitPath, gitWithin, trackedFiles } from "../../_git.mjs";
 import { limitFor } from "../../_time-limit.mjs";
 import { LAYOUT_PER_FILE } from "./commit-tree.mjs";
-
-// The absolute path of a file or folder git keeps for the worktree at `root`.
-const gitPath = (root, name) => resolve(root, git(["rev-parse", "--git-path", name], root));
 
 // The bound of each git call making the tested tree of the worktree at `root`: git's own bound and LAYOUT_PER_FILE a
 // file its index tracks, `git add -A` the call it was measured on.
@@ -24,10 +21,10 @@ export function testedTree(root, install) {
   const temporary = mkdtempSync(join(tmpdir(), "roadkeeper-tree-"));
   try {
     const index = join(temporary, "index");
-    try { copyFileSync(gitPath(root, "index"), index); } catch (e) { if (e.code !== "ENOENT") throw e; } // none: git starts one
+    try { copyFileSync(findGitPath(root, "index"), index); } catch (e) { if (e.code !== "ENOENT") throw e; } // none: git starts one
     mkdirSync(join(temporary, "objects"));
     const own = { GIT_INDEX_FILE: index, GIT_OBJECT_DIRECTORY: join(temporary, "objects"),
-      GIT_ALTERNATE_OBJECT_DIRECTORIES: gitPath(root, "objects") };
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: findGitPath(root, "objects") };
     const call = { own, timeout: testedTreeLimit(root) };
     gitWithin(["add", "-A"], root, call);
     // taken out after the add: an exclude pathspec naming an ignored path fails it, and an ignore rule ending in `/`

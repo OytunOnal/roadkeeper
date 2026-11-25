@@ -59,14 +59,14 @@ flowchart TD
 - **From an idea:** `/roadkeeper:genesis` sizes the project with you in four questions, brainstorms it into a one-pager weighed against market research, has you pick a design from its mockups, and plans the versions on your GitHub tracker.
 - **From existing code:** `/roadkeeper:adopt` takes stock of what the code already does, walks you through it for your corrections, then plans the same way.
 - **Version by version:** the work is planned as small versions, each named by what the product can do; new ideas wait as candidates, and at each version's close everything open is re-planned with you, its critique's and architecture read's findings included. A version's number says what changed for you: the first number rises when you must act.
-- **Slice by slice:** each slice is built test-first and reviewed in a pull request against your coding standards, its spec or issue, and security; one larger than a ticket, or with a new screen, is first questioned with you until every decision is made and written as a spec. Before it merges, you see what it changes that can be seen, served from its branch; once its checks pass, it merges on its own.
+- **Slice by slice:** each slice is built test-first and reviewed in a pull request against your coding standards, its spec or issue, and security; one larger than a ticket, or with a new screen, is first questioned with you until every decision is made and written as a spec. Each question's options show what checked the facts they rest on, or say they are unchecked, and you rule on each choice a build made that your rulings had not settled, before its review. Before it merges, you see what it changes that can be seen, served from its branch; once its checks pass, it merges on its own.
 - **Tried for real:** a merged slice turns real-green only once it has been used for real and works.
-- **A retro after each slice:** it reads the slice's sessions and proposes changes to your checks, rules and docs; it brings you those seen in two of the last three retros, or severe ones, and keeps the rest as notes. Its table of what each session and agent did, and how long the slice waited on you, comes from one command, counted the same way every time.
+- **A retro after each slice:** it reads the slice's sessions and proposes changes to your checks, rules and docs; it brings you those seen in two of the last three retros, or severe ones, and keeps the rest as notes. Its table of what each session and agent did, and how long the slice waited on you, comes from one command, counted the same way every time, in hours and minutes, and ends where the slice's own work ends.
 - **At each version's close:** a critique walks the product as a first-time user, the architecture is read, the test suite is read for cases that catch nothing another case misses, laid out as cards you pick from, each showing the code only its cases reach, and from v1 on a release says what the product can do now; before the first launch, the name, the licence and the launch checklist are settled too.
 - **After launch:** `/roadkeeper:steward` takes each report: a bug is traced to the promise the product broke, with fixes offered for you to pick; an idea becomes a candidate.
 - **The Road:** one page drawn from the tracker and the code's structure, showing progress by version, what waits on you, and the code's levels and modules.
 - **Architecture:** the code follows clean architecture's dependency rule, each file at the level of what it knows: generic code (the kernel) innermost, the project's rules (the domain) around it, then its use cases, and every dependency pointing inward; and it is grouped into deep modules: a folder behind one entry file, everything inside private, on one level or several, nested as it grows. The structure check holds both before every merge in JavaScript, TypeScript, Astro and Python code, and a test reaching past a module's entry fails it. The inner levels stay pure: your linter refuses a JavaScript or TypeScript file there that imports anything outside the project or reads the environment, the network or the clock, and the structure check refuses the same in a Python file, the built-in `open` included; breaches already in your code are recorded as debt when you update, so nothing goes red. The Road draws it all, and each version's close reads the code against it, so what an agent writes stays legible as it grows. [The rules](skills/slice/references/structure.md).
-- **While it works:** hooks run your linter on every file written, keep each of the agent's shell calls to one plain command, and tell you at each session start what waits on you. A builder runs only the tests that really run or read the files its change touches, and a change to your documents alone runs only the tests that read them, so it goes green in seconds. A refactor's proof that nothing changed takes about half the time when the old code already ran green, and the green names its slowest test files. The structure check says the map is out of date when a test changes its imports. A green that went red only under load reruns just the failed test files; a fresh worktree borrows your main checkout's install; and every step stops only when its work truly hangs, however large the project. When something fails, the tool says what really went wrong: a refused write names how the linter failed, a test whose result changed after a refactor says why under its line, a fresh worktree is told where to install, and the session-start line counts from the tracker itself or says the read ran out of time.
+- **While it works:** hooks run your linter on every file written, keep each of the agent's shell calls to one plain command, and tell you at each session start what waits on you. A builder runs only the tests that really run or read the files its change touches, and a change to your documents alone runs only the tests that read them, so it goes green in seconds. A refactor's proof that nothing changed takes about half the time when the old code already ran green, the green and that proof ask git less so they finish sooner, and the green names its slowest test files. An agent polling a run in a sleeping loop is told to wait for the run's notice instead. The structure check says the map is out of date when a test changes its imports. A green that went red only under load reruns just the failed test files; a fresh worktree borrows your main checkout's install; and every step stops only when its work truly hangs, however large the project. When something fails, the tool says what really went wrong: a refused write names how the linter failed, a test whose result changed after a refactor says why under its line, a fresh worktree is told where to install, and the session-start line counts from the tracker itself or says the read ran out of time.
 
 What changed in each version: the [releases](https://github.com/OytunOnal/roadkeeper/releases).
 
@@ -121,7 +121,7 @@ A change to one of these that makes you act, a file to move or a command to type
 - **Hooks**, each acting only in a project holding `docs/roadkeeper/`:
   - `nudge`, at session start, counts what waits on you from the tracker and, on the default branch only, redraws The Road from `issues.json`;
   - `road-redraw`, after a command that writes to the tracker, rewrites `issues.json` and redraws The Road in the background, on the default branch only;
-  - `shell-block`, before Claude runs a shell command (its Bash or PowerShell tool; your own terminal is never read), keeps each call to one plain command, since agents lose time and context on the rest: it refuses commands chained together (`&&`, `;`, `|`, `$( )`), an interpreter given its program inline (`node -e`, `python -c`) or through a heredoc, `sed -i`, and `git show <rev>:<path> --output=`, which leaves the file empty and prints it whole, each refusal naming the form that works;
+  - `shell-block`, before Claude runs a shell command (its Bash, PowerShell or Monitor tool; your own terminal is never read), keeps each call to one plain command, since agents lose time and context on the rest: it refuses commands chained together (`&&`, `;`, `|`, `$( )`), a loop that sleeps while it waits on a run (its refusal tells the agent to wait for the run's notice instead), an interpreter given its program inline (`node -e`, `python -c`) or through a heredoc, `sed -i`, and `git show <rev>:<path> --output=`, which leaves the file empty and prints it whole, each refusal naming the form that works;
   - `merge-guard`, before a shell command, refuses `gh pr merge`, or a push to the default branch or a tag, until the tree that lands has run green;
   - `check-at-write`, after Write or Edit, refuses the written file's breaches of your project's linter;
   - `skills-pointer`, at every session start and after a compact or a clear, tells the session to work from Roadkeeper's skill files.
@@ -142,16 +142,17 @@ A change to one of these that makes you act, a file to move or a command to type
 
 The next versions, by their titles:
 
-- v3.4.1 — A session waits less, and its retro's table and checks read true
+- v3.4.2 — A red test, a document change and the drawing cost the owner nothing extra
 - v3.5.0 — Roadkeeper's own tools keep up as they grow
-- v3.6.0 — Roadkeeper's tools say what they did, and a slice runs without a hand
-- v3.6.1 — Roadkeeper's skills and the Architecture tab read short and plain
-- v3.7.0 — The checks see more
-- v3.8.0 — Every project's checks fit its code
-- v3.8.1 — Roadkeeper's own checks are kept once and prove a change in one run
-- v3.8.2 — Roadkeeper's tools and tests split before they grow
-- v3.8.3 — Roadkeeper's busiest files split along what they do
-- v3.9.0 — The owner decides on a drawn page: the look before a merge, a slice's plan, the project's decisions and words
+- v3.6.0 — The test sweep reads every project, and Roadkeeper pays its small debts
+- v3.7.0 — Roadkeeper's tools say what they did, and a slice runs without a hand
+- v3.7.1 — Roadkeeper's skills and the Architecture tab read short and plain
+- v3.8.0 — The checks see more
+- v3.9.0 — Every project's checks fit its code
+- v3.9.1 — Roadkeeper's own checks are kept once and prove a change in one run
+- v3.9.2 — Roadkeeper's tools and tests split before they grow
+- v3.9.3 — Roadkeeper's busiest files split along what they do
+- v3.10.0 — The owner decides on a drawn page: the look before a merge, a slice's plan, the project's decisions and words
 
 ## Proven on
 

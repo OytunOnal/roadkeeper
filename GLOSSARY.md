@@ -77,7 +77,7 @@ An issue on a milestone, named by what becomes possible once it lands; it goes f
 _Avoid_: sprint, ticket (Pocock's word for the parts a spec is cut into)
 
 **Slice window**:
-The time from a slice's `active` label to the next issue's `active` label, or to now; every transcript of the project in that time belongs to the slice.
+The time from a slice's `active` label to when the slice gives it up or the next issue gets it, whichever comes first, or to now; every transcript of the project in that time belongs to the slice.
 _Avoid_: range, span
 
 **Hook refusal**:
@@ -237,7 +237,7 @@ Roadkeeper's measurement of a skill or agent file on a golden set.
 _Avoid_: eval suite, benchmark
 
 **Shell block**:
-The rules every brief opens with on how a shell call is written: one command per call, literal arguments, and files written by the editor or a script file. In the session and in every agent, Roadkeeper refuses the commonest breaks: commands chained together, a program given inline or through a heredoc, a file rewritten in place, and a file at a revision saved the way that leaves it empty. Each refusal names the form that works.
+The rules every brief opens with on how a shell call is written: one command per call, literal arguments, and files written by the editor or a script file. In the session and in every agent, Roadkeeper refuses the commonest breaks: commands chained together (a chain that sleeps, a wait polling a run, told to wait for the run's notice instead), a program given inline or through a heredoc, a file rewritten in place, and a file at a revision saved the way that leaves it empty. Each refusal names the form that works.
 _Avoid_: shell rules, one-command rule
 
 **Green**:

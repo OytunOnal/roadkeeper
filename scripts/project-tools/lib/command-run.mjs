@@ -10,7 +10,7 @@
 import { spawn } from "node:child_process";
 import { lstatSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { git, findProgram, trackedFiles } from "../../_git.mjs";
+import { findLocalGitVariables, findProgram, trackedFiles } from "../../_git.mjs";
 import { controlsReplaced, cutAt } from "../../_text.mjs";
 import { limitFor, ranOut } from "../../_time-limit.mjs";
 
@@ -34,7 +34,7 @@ export const stepLimit = (root) => limitFor({ floor: COMMAND_TIMEOUT, perFile: S
 // repository (`git rev-parse --local-env-vars`): a git hook hands its run a GIT_DIR, which would steer a test's git.
 export function commandEnv(root) {
   let local = [];
-  try { local = git(["rev-parse", "--local-env-vars"], root).split(/\s+/); } catch { /* git asked nothing: none dropped */ }
+  try { local = findLocalGitVariables(root); } catch { /* git asked nothing: none dropped */ }
   const dropped = new Set(local.map((k) => k.toUpperCase()));
   return Object.assign(Object.create(null), Object.fromEntries(Object.entries(process.env).filter(([k]) => !dropped.has(k.toUpperCase()))));
 }

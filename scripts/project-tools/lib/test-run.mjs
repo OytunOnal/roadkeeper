@@ -95,14 +95,21 @@ function groups(files, size) {
   return all;
 }
 
-// Each task run, WORKERS at a time: a promise of their results, in the tasks' order.
-export async function inPool(tasks) {
-  const results = new Array(tasks.length);
-  let next = 0;
-  const worker = async () => { while (next < tasks.length) { const k = next++; results[k] = await tasks[k](); } };
-  await Promise.all(Array.from({ length: Math.min(WORKERS, tasks.length) }, worker));
-  return results;
+// A pool every caller of it shares: `pool(tasks)` runs each task, WORKERS at a time across all the tasks any caller has
+// handed it, in the order they were handed in; a promise of their results, in the tasks' order.
+export function makeSharedPool() {
+  let freeSlots = WORKERS;
+  const waiting = [];
+  const takeSlot = () => (freeSlots > 0 ? (freeSlots--, Promise.resolve()) : new Promise((resolve) => waiting.push(resolve)));
+  const release = () => { const next = waiting.shift(); if (next) next(); else freeSlots++; };
+  return (tasks) => Promise.all(tasks.map(async (task) => {
+    await takeSlot();
+    try { return await task(); } finally { release(); }
+  }));
 }
+
+// Each task run, WORKERS at a time: a promise of their results, in the tasks' order.
+export const inPool = (tasks) => makeSharedPool()(tasks);
 
 // One run of runTests over these files, its results file at `out`: a promise of { ran, cases }. `run`: { tree,
 // commands, adapter, env }.
@@ -139,16 +146,21 @@ async function groupCases(run) {
 const emptyRunLines = ({ group, ran }, label) => [
   `${label}: no case read from the run of ${plural(group.length, "test file")}: ${ran.why || "exit 0"}`, ...tailLines(ran.tail)];
 
+// `beforeTests`' steps run at the root of a tree, each line handed to `say`, one of its own starting with `label`: a
+// promise. `run`: { tree, commands, words, label }.
+export const runTreeBeforeTests = ({ tree, commands, words, label }, say) =>
+  runBeforeTests({ root: tree, commands, words }, (l) => say(l.startsWith(" ") ? l : `${label}: ${l}`));
+
 // The runs of the test files in a tree, each { group, ran, cases }: a promise of them, a run that read no case said.
 // `run` and `say` as treeCases' are.
 async function treeRuns(run, say) {
-  const { tree, commands, adapter, files, results, label } = run;
-  await runBeforeTests({ root: tree, commands, words: run.words }, (l) => say(l.startsWith(" ") ? l : `${label}: ${l}`));
+  const { tree, commands, adapter, files, results, label, pool = inPool } = run;
+  if (!run.beforeTestsRan) await runTreeBeforeTests(run, say);
   mkdirSync(results, { recursive: true });
   const env = commandEnv(tree);
   const tasks = groups(files, commands.filesPerRun).map((group, k) => () => groupCases(
     { tree, commands, adapter, env, group, out: join(results, `results-${k + 1}`) }));
-  const read = await inPool(tasks);
+  const read = await pool(tasks);
   for (const r of read) if (!r.cases.length) for (const line of emptyRunLines(r, label)) say(line);
   return read;
 }
@@ -209,8 +221,10 @@ export const runFileWhole = (setup, run) => runFile(setup, expanded(setup.comman
 export const runFileKeeping = (setup, run) => runFile(setup, expandedForCases(setup.commands.runCases, run), run);
 
 // The cases of the test files run in a tree, in the files' order: a promise of them, each line said handed to `say`,
-// a line of its own starting with `label`. `run`: { tree, commands, adapter, files, results, label }, `results` a
-// folder for the results files.
+// a line of its own starting with `label`. `run`: { tree, commands, adapter, files, results, label, pool,
+// beforeTestsRan }, `results` a folder for the results files, `pool` a makeSharedPool pool the runs take their turns in
+// (none: one of their own), `beforeTestsRan` true when the caller already ran the tree's `beforeTests`
+// (runTreeBeforeTests), else they run first.
 export const treeCases = async (run, say) => (await treeRuns(run, say)).flatMap((r) => r.cases);
 
 // The test files of the worktree `setup` holds (testSetup's) that its patterns match, each a plain file inside the root

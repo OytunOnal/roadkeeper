@@ -1,15 +1,16 @@
 #!/usr/bin/env node
 // @level main
 // Roadkeeper — the retro's table of a slice's runs: one row a run, the session and each agent, with its calls and its
-// seconds, split into waiting on you (a session's from its last reply, the owner's own message before or a question
+// time (as "42 s", "11 min 37 s" or "4 h 28 min"), split into waiting on you (a session's from its last reply, the owner's own message before or a question
 // box's answer, the latest, to each message the owner typed, and from each question box to its answer; an agent's from its hand-back to the session's
-// message resuming it) and the rest, its greens with their seconds and outcomes, its test runs
+// message resuming it) and the rest, its greens with their times and outcomes, its test runs
 // (reader-tests --run, red-before, same-cases, or a test file run by name with the commands file's `runTests`
-// program and `tests` pattern) counted with their seconds and any with no end, its hook
+// program and `tests` pattern) counted with their time and any with no end, its hook
 // refusals (GLOSSARY.md) and lint fixes by hook, and its failed calls by kind (exited non-zero, denied, tool errors,
 // repeated), read from the transcripts Claude Code keeps for the project, cut to the slice window (GLOSSARY.md); under
-// the table, each green with the slowest test files it printed.
-//   node slice-runs.mjs <N> [--root <path>]                          the spec's slice window, from the tracker
+// the table, each run's transcript, then each green with the slowest test files it printed.
+//   node slice-runs.mjs <N> [--root <path>]                          the slice's window, from the tracker; <N> its
+//                                                                    spec's number once specced, else its issue's
 //   node slice-runs.mjs <N> --from <time> [--to <time>] [--root <path>]   a window given by hand, for work never labelled
 //
 // Acts on the tree --root names, else the directory it is run in (scripts/_root-option.mjs).
@@ -23,7 +24,10 @@
 // stops the command; a link inside it is not read; a
 // transcript last written before the window starts is never opened; at most 5,000 transcripts are read; a line over
 // 64 MB is skipped unparsed; an output file outside the temp folder, a link, not a file or over 16 MB reads "times not
-// found"; a run's name is cut to 80 characters, a line listing greens to 200. The table says what any bound cut, and
+// found"; a run's name is cut to 80 characters, a line listing greens to 200; an issue closed specced in another, by a
+// comment of the repository's owner, a member or a collaborator, stops the command, naming that spec; a slice that
+// takes `active` back after giving it up is counted to its last give-up. The table says what any bound skipped or
+// shortened, and
 // each link, unreadable transcript or description file, subagents folder it could not list and unparsed line it
 // skipped. A transcript folder it cannot list, or a window holding no message or call, stops the command, no table
 // written.
@@ -44,8 +48,8 @@ const COMMANDS_CAP = 1024 * 1024; // bytes of the commands file read: a project'
 
 // what --help prints
 const USAGE = `usage: node slice-runs.mjs <N> [--from <time> [--to <time>]] [--root <path>]
-  <N>            the spec's number: the window runs from the active label of the issue specced in it, or of the
-                 spec, to the next issue's active label, or now
+  <N>            the slice's number: its spec's once specced, else its issue's; the window runs from its first
+                 active label to when the slice gives the label up or the next issue gets one, or now
   --from, --to   the window given by hand, for work never labelled active; --to defaults to now
   --root         the project's tree, else the working directory
 Prints the table and writes it into .run/retro-<N>/slice-runs.md.
@@ -69,9 +73,9 @@ function parseArgs(argv) {
     if (a === "--from") { fromText = argv[++i]; given.from = parseTimeOrStop(fromText, "--from"); }
     else if (a === "--to") { toText = argv[++i]; given.to = parseTimeOrStop(toText, "--to"); }
     else if (/^\d{1,9}$/.test(a) && given.number === null) given.number = Number(a);
-    else fail(`slice-runs.mjs: unknown argument ${a}`);
+    else fail(`slice-runs.mjs: give the slice's number, such as 749; ${a} is not one. --help lists the options.`);
   }
-  if (given.number === null) fail("slice-runs.mjs: name the spec's number");
+  if (given.number === null) fail("slice-runs.mjs: give the slice's number, such as 749. --help lists the options.");
   const isReversed = given.from !== null && given.to !== null && given.to < given.from;
   if (isReversed) fail(`slice-runs.mjs: --to (${toText}) is before --from (${fromText}): swap them`);
   return given;

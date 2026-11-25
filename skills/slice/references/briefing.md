@@ -12,7 +12,8 @@ What a slice's subagents are told: implementers, the merger, the code-review axe
   > - The shell starts where you work. No `cd`.
   > - One command per call. `&&`, `;`, `|` and `$( )` are chains.
   > - A silent result is exit 0; a failure shows its code, so nothing is chained to read it.
-  > - Literal arguments. No `$variable`, glob or loop: use Glob, Grep or a script file.
+  > - A background run's end comes as a notice: end your turn to wait for it, then read its output file whole, once.
+  > - Literal arguments. No `$variable`, `$env:` assignment, glob or loop: use Glob, Grep or a script file.
   > - A file you write yourself is written with Write or Edit, or as a script file. No heredoc, `node -e`, `python -c` or `sed -i`.
   > - A file at a revision: `git show <rev>:<path> > <file>`, in Bash; `--output=` leaves that file empty.
 
@@ -30,7 +31,7 @@ The plugin's green, `node ${CLAUDE_PLUGIN_ROOT}/scripts/green.mjs`: the project'
 
 - **The session's:** run once, before the merge, in the worktree holding the PR's head. A red one on test files is rerun once, `green.mjs --rerun-failed`, which refuses a failed file reaching the change; a red the rerun repeats or refuses goes to a fix agent (the session itself in a slice it built under `/implement`), then the green runs again.
 - **Builders, fix rounds and mergers** run the suites their change touches (Builders, **Build**), never the green.
-- **Plainly:** a green or a suite runs in the foreground, with no redirect, wrapper or capture, its output read from the result. One expected to outlast the call's cap (600 s; a subagent's 180 s) starts in the background: its end awaited on the notice, never polled, then its output file read whole, once. Nothing is edited until it ends.
+- **Plainly:** a green or a suite runs in the foreground, with no redirect, wrapper or capture, its output read from the result. One expected to outlast the call's cap (600 s; a subagent's 180 s) starts in the background, awaited as the Shell block's notice line says. Nothing is edited until it ends.
 - **Report:** the output's last lines, and the exit code where the output does not end on it. A rerun's stamped line, naming its files, goes in the PR body's Evidence.
 
 ## Borrow-install, red-before, same-cases and reader-tests
@@ -58,7 +59,7 @@ An implementer subagent, a fix round, or the session building a slice under `/im
 - **Moved case:** what a case moved to another suite asserted that the new suite cannot see stays asserted where it was.
 - **Commits:** a move carries the path fixes and debt rows that keep it green.
 - **Finish:** merge the base's tip into the branch with `--no-commit`. In a structured project, when the merge changes `docs/roadkeeper/structure.json`, rerun the structure command `CODING_STANDARDS.md` names, a conflict there included, and add its output. Then commit the merge.
-- **Report:** branch, commits, the suites' last lines, each choice the brief left open (one line each), what it could not do.
+- **Report:** branch, commits, the suites' last lines, each choice the brief or the grill's rulings left open (one line each), what it could not do.
 
 ### Merger
 

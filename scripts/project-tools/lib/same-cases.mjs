@@ -4,9 +4,10 @@
 // it (commit-tree.mjs), carrying nothing from today; today is the working tree in place. On each, only the named test
 // files it holds, those the commands file's `tests` pattern, else the adapter's, matches, a named file it does not match
 // said once as not run; or with none named every file the pattern matches there; run by name after `beforeTests`
-// (test-run.mjs): the base first, then today. A base suite with a suite record standing for it is read
-// from it in place of running, said (recorded-base.mjs), unless FRESH is given; each suite run on either tree writes its
-// suite record for that tree, the base's commit tree or today's tested tree (suite-records.mjs, tested-tree.mjs).
+// (test-run.mjs): each tree's `beforeTests` one after the other, then both trees' suites at once, taking their turns
+// in one pool of one run per processor. A base suite with a suite record standing for it is read from it in place of
+// running, said (recorded-base.mjs), unless FRESH is given; each suite run on either tree writes its suite record for
+// that tree, the base's commit tree or today's tested tree (suite-records.mjs, tested-tree.mjs).
 // Prints "same outcomes" with the counts, or each case whose outcomes differ with both, an unknown one on either tree
 // always, and under it why on each tree (case-outcomes.mjs), in the words handed in (case-outcome-lines.mjs). Git, the
 // commit tree, the test run and the suite records are reached only through the adapters the entry hands in.
@@ -74,28 +75,41 @@ export async function sameCases(call, say) {
   if (setup.said) say(`same-cases: ${setup.said}`);
   const plan = { hash, copied: [], install: commands.install, installFrom };
   const trees = { main: adapters.checkouts(root).main, hash, base: adapters.treeOf(root, hash) };
-  return adapters.inCommitTree({ root, label: "same-cases", plan }, say, async (scratch) => {
-    const base = await readOrRunBaseRecording({ ...setup, recordedEdges: call.recordedEdges, trees, scratch, suites: files.base, fresh }, say);
-    const today = await runTodayRecording({ ...setup, trees, scratch, suites: files.today }, say);
-    return compared({ base, today, words: setup.words }, say);
-  });
+  const sides = { setup, recordedEdges: call.recordedEdges, trees, files, fresh };
+  return adapters.inCommitTree({ root, label: "same-cases", plan }, say, (scratch) => compareTrees({ ...sides, scratch }, say));
 }
 
-// Today's cases: its suites run in the working tree, their suite records written for the tested tree taken before the
-// run, none when the run changed it (said). `run`: testSetup's, with { adapters, trees, scratch, suites }. A promise of
-// the cases.
-async function runTodayRecording(run, say) {
+// The two trees' cases compared (compared): the base's suites split into those read and those run (splitBase); each
+// tree's `beforeTests` run, the base's only when it runs a suite, one tree after the other; then both trees' suites run
+// at once, taking their turns in one pool of one run per processor. `sides`: { setup, recordedEdges, trees, files,
+// fresh, scratch }. A promise of the exit code.
+async function compareTrees({ setup, recordedEdges, trees, files, fresh, scratch }, say) {
+  const { root, commands, adapters } = setup;
+  const pool = adapters.makeSharedPool();
+  const base = { ...setup, recordedEdges, trees, scratch, suites: files.base, fresh, pool, tree: scratch.tree, label: BASE_LABEL };
+  const today = { ...setup, trees, scratch, suites: files.today, pool, tree: root, label: TODAY_LABEL };
+  const split = splitBase(base, say);
+  const tested = adapters.testedTree(root, commands.install);
+  if (split.run.length) await adapters.runTreeBeforeTests(base, say);
+  await adapters.runTreeBeforeTests(today, say);
+  const [baseCases, todayCases] = await Promise.all([runBaseRecording(base, split, say), runTodayRecording(today, tested, say)]);
+  return compared({ base: baseCases, today: todayCases, words: setup.words }, say);
+}
+
+// Today's cases: its suites run in the working tree, its `beforeTests` already run, their suite records written for
+// `tested`, the tested tree taken before them, none when the run changed it (said). `run`: testSetup's, with {
+// adapters, trees, scratch, suites, pool, tree, label }. A promise of the cases.
+async function runTodayRecording(run, tested, say) {
   const { root, commands, trees, scratch, suites, adapters } = run;
   const { testedTree, treeCases, pathJoin, writeSuiteRecords, formatUnwrittenLine } = adapters;
-  const tree = testedTree(root, commands.install);
-  const today = await treeCases({ ...run, tree: root, files: suites, results: pathJoin(scratch.results, "today"), label: TODAY_LABEL }, say);
-  if (tree !== testedTree(root, commands.install)) { say(`${TODAY_LABEL}: no suite record written: the tree changed during the run`); return today; }
-  const unwritten = writeSuiteRecords(trees.main, tree, { cases: today, suites });
+  const today = await treeCases({ ...run, files: suites, results: pathJoin(scratch.results, "today"), beforeTestsRan: true }, say);
+  if (tested !== testedTree(root, commands.install)) { say(`${TODAY_LABEL}: no suite record written: the tree changed during the run`); return today; }
+  const unwritten = writeSuiteRecords(trees.main, tested, { cases: today, suites });
   if (unwritten) say(formatUnwrittenLine(unwritten, TODAY_LABEL));
   return today;
 }
 
-// The base as recorded-base.mjs reads it, from readOrRunBaseRecording's `run`: the base's test files, the suites named
+// The base as recorded-base.mjs reads it, from splitBase's `run`: the base's test files, the suites named
 // among them whatever the pattern says, its declared run lists, and the edges its structure.json records, read in its
 // laid-out tree.
 function describeBaseForRecords({ root, isTest, isRunList, recordedEdges, adapters, trees, scratch, suites }) {
@@ -107,18 +121,23 @@ function describeBaseForRecords({ root, isTest, isRunList, recordedEdges, adapte
   return { root, main: trees.main, tree: trees.base, tests, suites, reach, adapters };
 }
 
-// The base's cases: each suite's read from its suite record where it may be (recorded-base.mjs), the rest run on the
-// commit's tree and their suite records written. `run`: testSetup's, with { recordedEdges, adapters, trees, scratch,
-// suites, fresh }, `trees` { main, hash, base }, the main checkout, the base's commit and its tree; `fresh`, every suite
-// run, no record read. A promise of the cases.
-async function readOrRunBaseRecording(run, say) {
-  const { trees, scratch, suites, fresh } = run;
-  const { treeCases, pathJoin, writeSuiteRecords, formatUnwrittenLine } = run.adapters;
-  const split = fresh ? { read: [], run: suites, lines: [] } : splitRecordedBase(describeBaseForRecords(run), BASE_LABEL);
+// The base's suites split, its lines said: { read, run }, `read` the cases of each suite read from its suite record
+// where it may be (recorded-base.mjs), `run` the suites to run on the commit's tree. `run`: testSetup's, with {
+// recordedEdges, adapters, trees, scratch, suites, fresh }, `trees` { main, hash, base }, the main checkout, the base's
+// commit and its tree; `fresh`, every suite run, no record read.
+function splitBase(run, say) {
+  const split = run.fresh ? { read: [], run: run.suites, lines: [] } : splitRecordedBase(describeBaseForRecords(run), BASE_LABEL);
   for (const line of split.lines) say(line);
+  return split;
+}
+
+// The base's cases: those `split` (splitBase's) read, then those of its suites run on the commit's tree, its
+// `beforeTests` already run, their suite records written. `run` as splitBase's, with { pool, tree, label }. A promise.
+async function runBaseRecording(run, split, say) {
   if (!split.run.length) return split.read;
-  const ran = await treeCases({ ...run, tree: scratch.tree, files: split.run, results: pathJoin(scratch.results, "base"), label: BASE_LABEL }, say);
-  const unwritten = writeSuiteRecords(trees.main, trees.base, { cases: ran, suites: split.run });
+  const { treeCases, pathJoin, writeSuiteRecords, formatUnwrittenLine } = run.adapters;
+  const ran = await treeCases({ ...run, files: split.run, results: pathJoin(run.scratch.results, "base"), beforeTestsRan: true }, say);
+  const unwritten = writeSuiteRecords(run.trees.main, run.trees.base, { cases: ran, suites: split.run });
   if (unwritten) say(formatUnwrittenLine(unwritten, BASE_LABEL));
   return [...split.read, ...ran];
 }

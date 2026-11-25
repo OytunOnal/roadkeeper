@@ -7,6 +7,7 @@ import { splitWords } from "./_shell.mjs";
 
 const INTERPRETER = /^(?:python(?:\d+(?:\.\d+)*)?|py|node)(?:\.exe)?$/i; // the interpreters a project's helpers run
 const SED = /^sed(?:\.exe)?$/i; // sed's name as a shell runs it
+const SLEEP = /^(?:sleep|start-sleep)(?:\.exe)?$/i; // a pause: Bash's sleep, PowerShell's Start-Sleep, any case
 const NODE_VALUED = new Set(["-r", "--require", "--import", "--loader", "--experimental-loader", "--input-type", "--env-file", "-C", "--conditions", "--title"]); // node options whose value is the next word
 const NODE_PROGRAM = /^(?:--eval|--print)(?:=|$)|^-[ep]/; // node options that carry the program (`-e`, `-p`, `-pe`, `--eval=…`)
 const SED_VALUED = new Set(["-e", "-f", "-l", "--expression", "--file", "--line-length"]); // sed options whose value is the next word
@@ -69,7 +70,7 @@ function showsFileToOutput(args) {
 }
 
 // One simple command ({ words, heredoc, fed }, shellCommands') read for the Shell block's forms: { name, source,
-// stdinIsHeredoc, rewritesInPlace, showsFileToOutput, isGit }.
+// stdinIsHeredoc, rewritesInPlace, showsFileToOutput, isGit, isSleep }.
 export function readShellBlockCommand({ words, heredoc, fed }) {
   const program = readProgram(words);
   const isGit = GIT.test(program.name);
@@ -80,5 +81,6 @@ export function readShellBlockCommand({ words, heredoc, fed }) {
     rewritesInPlace: SED.test(program.name) && rewritesInPlace(program.args),
     showsFileToOutput: isGit && showsFileToOutput(program.args),
     isGit,
+    isSleep: SLEEP.test(program.name),
   };
 }

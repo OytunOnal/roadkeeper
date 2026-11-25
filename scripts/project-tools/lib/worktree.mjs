@@ -8,14 +8,14 @@
 import { lstatSync, readFileSync, renameSync, symlinkSync, unlinkSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { isPlainDir, lexists, realPath } from "../../_files.mjs";
-import { git, mainCheckout } from "../../_git.mjs";
+import { findGitPath, mainCheckout } from "../../_git.mjs";
 
 const LOCKFILE = "package-lock.json";  // npm's pins, beside the install folder
 const LOCK_CAP = 64 * 1024 * 1024;     // bytes of a lockfile read: a large project's pins, with room
 
 // The root of the worktree holding `dir`, or null outside one.
 export function worktreeRoot(dir) {
-  try { return resolve(git(["rev-parse", "--show-toplevel"], dir)); } catch { return null; }
+  try { return resolve(findGitPath(dir, "top")); } catch { return null; }
 }
 
 const samePath = (a, b) => (process.platform === "win32"
